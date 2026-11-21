@@ -79,153 +79,418 @@ const fx = { meta, create };   // 模拟型：自己维护状态（粒子、碎�
 
 ## 3. 画笔 API（draw 的第一个参数 p）
 
-画笔写两个缓冲：颜色层（实色像素）和光层（加法发光），合成时光叠在颜色上。
-发光的东西的正确画法：先画实色像素，再补一圈 `p.glow`。
+画笔写入两个缓冲：**颜色层**（实色像素）和**光层**（加法发光），合成时光叠在颜色上。
+所以“发光的东西”的正确画法永远是：先画实色像素，再补一圈 `p.glow`。只画光会得到一团雾。
 
-### 像素
+所有方法的坐标都是**特效局部坐标**：`(0, 0)` 是 meta 里声明的 `origin`，往右 x 正、往下 y 正，
+1 单位 1 像素。界面会自动放置、镜像、旋转，你不用关心画布在哪。
 
-| 方法 | 说明 |
-| --- | --- |
-| `p.px(x, y, c)` | 一个不透明像素 |
-| `p.dot(x, y, c, a)` | 像素带透明度 a（0–1）；低透明度用 4×4 抖动实现 |
-| `p.blend(x, y, c, a)` | 真混合，用于烟雾雾气 |
-| `p.light(x, y, c, k)` | 只加光不改颜色 |
+### 3.1 像素
 
-### 形状（c 和 a 都可以是函数）
+```js
+p.px(x, y, c)                 // 一个不透明像素。c 是颜色（hex() 的返回值）
+p.dot(x, y, c, a)             // 一个像素，a 是 0~1 的透明度
+p.blend(x, y, c, a)           // 真透明混合（烟雾、雾气用）
+p.light(x, y, c, k)           // 只往光层加光，不动颜色
+```
 
-| 方法 | 回调参数 |
-| --- | --- |
-| `p.line(x0,y0,x1,y1,c,a)` | c/a 收 `u`：0 到 1 的进度 |
-| `p.beam(x0,y0,x1,y1,w,c,a)` | 有宽度的线段，圆头；c 收 `(u, v)`，v 是 0 中心到 1 边缘 |
-| `p.circle(cx,cy,r,c,a)` | c 收 `(d, ang)`，d 是 0 中心到 1 边缘 |
-| `p.ellipse(cx,cy,rx,ry,c,a)` | 同 circle |
-| `p.ring(cx,cy,r,w,c,a)` | 圆环，w 厚度 |
-| `p.arc(cx,cy,r,w,a0,a1,c,a)` | 弧段，刀光用 |
-| `p.rect(x,y,w,h,c,a)` | 矩形 |
-| `p.poly(pts,c,a)` / `p.tri(...)` | 多边形 / 三角 |
-| `p.shade(x0,y0,x1,y1,fn)` | 像素着色器：`fn(x,y,out)` 返回颜色或 0 跳过；可写 `out.a` `out.k` |
+**参数**：
 
-### 光
+- `x, y` — 局部坐标，可以是小数（落到最近的像素格）
+- `c` — 颜色整数，用 `hex("#ffaa33")` 或 `rgb(r, g, b)` 得到
+- `a` — 透明度 0~1。**低于 1 时引擎用 4×4 棋盘抖动**：一部分像素画、一部分不画，
+  这是像素画淡出的标准做法。想要平滑的半透明（比如烟）才用 `blend`
+- `k` — 光强 0~1，大于 1 允许（用于爆发帧）
 
-| 方法 | 说明 |
-| --- | --- |
-| `p.glow(x,y,r,c,k)` | 径向光晕，k 强度 0–1 |
-| `p.glowLine(x0,y0,x1,y1,r,c,k)` | 线状光带 |
-| `p.glowRing(x,y,R,r,c,k)` | 环形光，冲击波用 |
+```js
+// 例：三点从实到虚
+p.px(0, 0, hex("#ffffff"));
+p.dot(4, 0, hex("#ffaa33"), 0.6);   // 抖动淡出
+p.dot(8, 0, hex("#ffaa33"), 0.3);
+```
 
-### 文本与精灵
+### 3.2 形状
 
-| 方法 | 说明 |
-| --- | --- |
-| `p.sprite(rows, pal, x, y, opts)` | 字符画：rows 字符串数组，pal 字符映射颜色，`.` 和空格为空；opts: `scale flip flipY tint a` |
-| `p.text(str, x, y, c, opts)` | 像素文字；opts: `font "mini"(3x5)\|"big"(5x7)` `scale` `align` `outline` `shadow` |
+形状方法的 `c` 和 `a` 除了常量，**都可以是函数**——这是做明暗、渐隐、拖尾的关键。
+函数收到什么参数，每个方法不同，见下表。
+
+| 方法 | 参数 | 回调收到 | 用途 |
+| --- | --- | --- | --- |
+| `p.line(x0,y0,x1,y1,c,a)` | 两端点 | `c(u)`，u 是 0 起点→1 终点的进度 | 轨迹、引线、拖尾 |
+| `p.beam(x0,y0,x1,y1,w,c,a)` | 两端点 + 宽度 w（像素） | `c(u, v)`，v 是 0 中心→1 边缘 | 光束、手臂、杆子 |
+| `p.circle(cx,cy,r,c,a)` | 圆心 + 半径 r | `c(d, ang)`，d 是 0 中心→1 边缘，ang 弧度 | 球体、光核 |
+| `p.ellipse(cx,cy,rx,ry,c,a)` | 圆心 + 两轴半径 | 同 circle | 压扁的球、身体块 |
+| `p.ring(cx,cy,r,w,c,a)` | 圆心 + 半径 + 厚度 w | `c(v, ang)`，v 是 0 内沿→1 外沿 | 冲击波、描边环 |
+| `p.arc(cx,cy,r,w,a0,a1,c,a)` | 圆心 + 半径 + 厚度 + 起止角（弧度） | `c(u, v)`，u 沿弧 0→1 | 刀光新月、扇形 |
+| `p.rect(x,y,w,h,c,a)` | 左上角 + 宽高 | 常量 | 方块身体、补丁 |
+| `p.poly(pts,c,a)` | 顶点数组 `[[x,y],...]` | `c(x, y)` | 多边形块、耳朵 |
+| `p.tri(x0,y0,x1,y1,x2,y2,c,a)` | 三顶点 | 同 poly | 三角 |
+| `p.shade(x0,y0,x1,y1,fn)` | 包围盒 | `fn(x, y, out)` 逐像素调用 | 完全自定义的形状 |
+
+```js
+// 例：一条从头到尾变暗的光束（剑的拖尾）
+p.beam(-20, -30, 20, -34, 3,
+  (u, v) => (v > 0.7 ? hex("#1e1b26") : hex("#ffd166")),   // v>0.7 是边缘，画深色描边
+  1 - u * 0.6);                                              // u 越接近终点越透明
+
+// 例：一个左上受光的球（四层硬色阶，不做平滑渐变）
+p.circle(0, -30, 12, (d, ang) => {
+  const light = -Math.cos(ang) * 0.62 - Math.sin(ang) * 0.78;  // 左上方向的光
+  if (d > 0.82) return hex("#1b2a5e");        // 最外圈：轮廓色
+  if (light > 0.55) return hex("#eaf9ff");    // 高光
+  if (light > -0.1) return hex("#9ed8ff");    // 亮面
+  return hex("#4a8fe0");                      // 暗面
+});
+
+// 例：shade 像素着色器——方块加缝线 X 眼（稻草人的头）
+p.shade(-8, -66, 8, -50, (x, y, out) => {
+  out.c = hex("#c9a26c");                     // 麻布色
+  const lx = Math.abs(x) - 3.5, ly = Math.abs(y + 58) - 3.5;
+  if (Math.abs(lx) < 0.7 && Math.abs(ly) < 0.7) out.c = hex("#3a2a18");  // X 眼的笔画
+});
+```
+
+`p.shade` 的 `out` 对象：`out.c` 颜色（必须设置，返回值也行）、`out.a` 透明度、
+`out.k` 该像素的额外光强。fn 返回 0（或 falsy）表示这个像素不画。
+
+### 3.3 光
+
+```js
+p.glow(x, y, r, c, k)              // 径向光晕：r 半径，k 中心强度 0~1，往外衰减到 0
+p.glowLine(x0,y0,x1,y1,r,c,k)      // 沿线段的光带
+p.glowRing(x, y, R, r, c, k)       // 环形光：R 环半径，r 衰减厚度。冲击波用
+```
+
+**参数**：`r` / `R` 是像素半径；`k` 是强度。光只加在光层，不遮挡颜色，所以叠多少层都不会糊。
+
+```js
+// 例：火把的光——中心亮，随火苗晃动
+p.glow(0, -30, 26, hex("#ffc23d"), 0.4 + noise(t * 9) * 0.12);
+```
+
+### 3.4 文本与精灵
+
+```js
+p.sprite(rows, pal, x, y, opts)    // 字符画
+p.text(str, x, y, c, opts)         // 像素文字
+p.measure(str, opts)               // 返回 [宽, 高]
+```
+
+**`p.sprite` 参数**：
+
+- `rows` — 字符串数组，一个字符一个像素；`.` 和空格是空
+- `pal` — 对象，字符 → 颜色（hex 字符串或颜色整数）
+- `x, y` — 放置位置
+- `opts` — `scale`(整数放大) `flip`(水平镜像) `flipY`(垂直翻转) `tint`(所有像素统一成一个色) `a`(透明度)
+
+```js
+// 例：用字符画一个 8x8 的小火苗，K 是黑尖，h 中层，w 内芯
+const FLAME = [
+  "...K...",
+  "..KK...",
+  ".Khhh..",
+  ".Khhww.",
+  ".Khhww.",
+  "..hhww.",
+  "...hww.",
+  "....ww.",
+];
+p.sprite(FLAME, { K: hex("#2b1f16"), h: hex("#f2561d"), w: hex("#ffc23d") }, -4, -30);
+```
+
+**`p.text` 参数**：`str` 文本，`x, y` 位置，`c` 颜色，
+`opts`: `font`("mini" 3×5 或 "big" 5×7) `scale` `align`("left"/"center"/"right")
+`outline`(描边色) `shadow`(阴影色) `a`。
+
+```js
+p.text("999", 0, -50, hex("#ffffff"), { font: "big", scale: 2, align: "center", outline: hex("#000000") });
+```
 
 ## 4. 全局工具（加载即有，不用 import）
 
-运行时把 21 个模块（core + 每个分类的 `_lib`）全部发布为全局，共 325 个名字。
-`Object.keys(pixelfx.kit)` 可列出全部。常用的：
+运行时把 21 个模块（core + 每个特效分类的 `_lib`）的全部导出发布为全局，共 325 个名字。
+`Object.keys(pixelfx.kit)` 可以列出全部。下面按用途分组，每个都给参数和例子。
 
-### 颜色
-
-| 名字 | 说明 |
-| --- | --- |
-| `hex("#ffaa33")` / `rgb(r,g,b)` | 颜色整数 |
-| `mix(a, b, t)` | 混色 |
-| `scale(c, k)` / `luma(c)` | 亮度 |
-| `fit(list, n)` | 任意长度的色带重采样为恰好 n 阶，暗亮端点保持 |
-| `FIRE_RAMP` / `SMOKE_RAMP` / `WHITE` | 现成色带 |
-
-调色板约定：暗到亮排列。特效内用 `fit(o.palette, 7)` 取 7 阶，0 最暗 6 最亮。
-调用方传的列表长度不同也会自动重采样，不会崩。
-
-### 数值与随机
-
-| 名字 | 说明 |
-| --- | --- |
-| `clamp` / `lerp` / `smooth` / `ease.outCubic` … | 数值与缓动 |
-| `TAU` | 2π |
-| `rand(a,b,c…)` | 带种子哈希随机，同参数同结果 |
-| `rng(seed, salt, frame)` | 拿一个 Rng；一帧一批 |
-| `new Rng(seed)` | `.range(lo,hi)` `.chance(p)` `.sign()` `.pick(arr)` |
-| `noise(x,y)` / `tileNoise` / `loopNoise(t,D,F)` | 噪声；loopNoise 在 D 秒内循环 F 次 |
-| `cycle(t, D)` / `wrap(v, n)` | 循环相位 |
-
-随机原则：一帧内的一批随机数用 `const r = rng(o.seed, salt, f)`（f 帧号），
-不要每像素调用一次 `rand`——那会每帧都变，画面闪烁。
-
-### 粒子（模拟型）
-
-| 名字 | 说明 |
-| --- | --- |
-| `new Particles({rng, ground})` | `.spawn(kind,x,y,vx,vy,life)` `.update(dt)` `.draw(p)` |
-| `new Lights()` | `.add(x,y,r,c,k,life)` `.update(dt)` `.draw(p)` |
-| `new Bits()` / `new Blazes()` | 碎片 / 火焰舌 |
-| `P.SPARK` `P.SMOKE` `P.BIT` `P.FLAME` `P.EMBER` | 粒子种类 |
-| `sparkle(p,x,y,r,hot,cold)` | 星芒闪光，命中暴击用 |
-| `flare(p,x,y,r,c,k)` | 十字光芒 |
-
-### 生物（critters 工具箱）
-
-| 名字 | 说明 |
-| --- | --- |
-| `new Grid(x0,y0,w,h)` | 离屏网格：`ellipse tube poly line sprite shade outline recolor draw` |
-| `shadow(p,cx,cy,rx,ry,c,a)` | 地面椭圆阴影 |
-| `curve` / `spring` / `toss` / `bounce` / `Swarm` | 曲线、弹簧、抛物线、弹跳、粒子群 |
-
-`Grid` 是画角色的核心：椭圆管状多边形拼身体，函数挑每像素颜色做明暗，
-最后 `g.outline(c)` 自动描 1px 边——描边色可按朝向变化，背光侧更黑。
-
-### 闪电（lightning 工具箱）
-
-| 名字 | 说明 |
-| --- | --- |
-| `VOLT` / `PLASMA` / `GOLD` / `WATER` | 现成色带 |
-| `zigzag(R, x0,y0,x1,y1, jag, forks)` | 主干加分叉的折线；R 是 Rng，jag 首段摆幅比例，forks 分叉概率 |
-| `bowed(R, ..., bow, jag)` | 弓形弯曲 |
-| `stroke(p, bolt, k, C, s, o)` | 画闪电：k 亮度，s 粗细倍数；o: `upTo hero light core` |
-| `crackle(p, bolt, k, C, glowK)` | 细电弧 |
-| `flight(x,y,vx,vy,age,o)` | 抛物线加阻力落点，纯函数 |
-| `scorch(p,cx,cy,rx,T0)` | 地面灼痕 |
-
-### 火（fire 工具箱）
-
-`tongue(p,x,y,h,w,sway,t,D,n,heat,only)` 单舌火焰；`firePuff` 火团；`smokePuff` 烟团；`ember` 火星。
-都接受 t 和循环周期 D，天然无接缝循环。
-
-其他分类的 `_lib` 也全部发布：写特效前先看同类的现成特效怎么用这些工具，
-比如 `melee/sword-slash.js`（刀光）、`critters/scarecrow2-bunny.js`（稻草人）、`fire/torch.js`（火把）。
-
-## 5. 播放器 API（pixelfx 全局对象）
-
-### `pixelfx.play(canvas, fx, opts)` 返回 Player
-
-opts：`scale`（整数显示倍数）`background` `loop` `speed` `seed` `flip` `light` `autoplay` `onEnd({t})`，
-其余原样作为 options 传给特效（palette、radius、seed…）。
-
-### Player 成员
-
-`play` `pause` `toggle` `seek(秒)` `restart` `setOptions(patch)` `resize(scale)` `destroy`；
-属性 `t` `playing` `width` `height` `duration`。
-
-### `pixelfx.drawTo(canvas, fx, t, opts)`
-
-只画一帧，不建播放器。适合自己写动画循环或画很多小预览：
+### 4.1 颜色
 
 ```js
-function loop(now) {
-  pixelfx.drawTo(cvs, fx, now / 1000, { scale: 2, background: "none" });
-  requestAnimationFrame(loop);
+hex("#ffaa33")        // 十六进制字符串 → 颜色整数。也接受 #rgb 三位简写
+rgb(r, g, b)          // 三通道 0-255 → 颜色整数
+mix(a, b, t)          // 两色混合，t 0=a 1=b
+scale(c, k)           // 亮度乘 k（>1 变亮）
+luma(c)               // 感知亮度 0~1
+ramp(["#…", …])       // hex 数组 → 颜色整数数组
+fit(list, n)          // 关键：把任意长度的色带重采样为恰好 n 阶
+WHITE                 // 纯白常量
+FIRE_RAMP / SMOKE_RAMP  // 9 阶火 / 烟色带，暗→亮
+```
+
+**`fit(list, n)` 是调色板的核心**：调用方可能传 3 个颜色也可能传 10 个，
+`fit` 把它拉伸或压缩成你的特效需要的阶数，暗端和亮端保持不动。所以特效内永远写
+`fit(o.palette, 7)` 然后按下标取色：0 最暗、6 最亮。
+
+```js
+const C = fit(o.palette, 7);
+p.circle(0, -20, 10, (d, ang) => {
+  const light = -Math.cos(ang) - Math.sin(ang) * 1.2;
+  if (light > 0.6) return C[5];       // 高光
+  if (light > 0) return C[4];         // 亮面
+  if (light > -0.6) return C[3];      // 中间
+  return C[1];                        // 暗面
+});
+```
+
+### 4.2 数值与随机
+
+```js
+clamp(v, lo, hi)      // 夹进区间；省略区间就是 0~1
+lerp(a, b, t)         // 线性插值，t 0=a 1=b
+smooth(t)             // 平滑 step（两端慢中间快）
+ease.outCubic(t)      // 缓动族：inCubic outCubic inOutCubic outBack outElastic ...
+TAU                   // 2π，写角度循环用它
+wrap(v, n)            // 取模到 0~n
+cycle(t, D)           // 循环相位 0~1，D 是周期
+```
+
+**随机——这是最容易用错的地方。**
+
+```js
+rand(a, b, c…)        // 带种子的哈希随机：同参数永远同结果，0~1
+rng(seed, salt, f)    // 拿一个 Rng 实例；f 通常是帧号
+new Rng(seed)         // 连续取随机：.range(lo,hi) .chance(p) .sign() .pick(arr)
+hash(a, b)            // 整数哈希
+```
+
+**规则：一帧内的一批随机数，先拿一个 Rng 再连续取；跨帧要变化的，把帧号当参数。**
+
+```js
+draw(p, t, o) {
+  const f = Math.floor(t * 30);            // 帧号
+  // 错：每像素 rand()，每帧都变 → 画面闪烁
+  // 对：每帧拿一个 Rng，本帧内稳定
+  const r = rng(o.seed, 7, f);
+  for (let i = 0; i < 8; i++) {
+    const a = r.range(0, TAU), len = r.range(4, 12);
+    p.dot(Math.cos(a) * len, -20 + Math.sin(a) * len, hex("#7ff3ff"), 0.9);
+  }
 }
 ```
 
-### `pixelfx.toDataURL(fx, {scale})`
+### 4.3 噪声与循环
 
-整段动画排成精灵图 PNG 的 data URL。
+```js
+noise(x, y)                 // 平滑 2D 噪声，-1~1
+noise2(x, y, z)             // 3D 版
+loopNoise(t, D, F, off)     // 在 D 秒内循环 F 次的噪声（火苗摆动用），off 偏移不同噪声
+tileNoise(x, F) / tileFbm   // 平铺噪声 / 分形叠加
+cycle(t, D)                 // 0→1 的循环相位
+```
 
-### `pixelfx.kit` / `pixelfx.shell` / `pixelfx.installKit`
+```js
+// 例：火把的光随火苗晃，幅度小、频率高
+const flicker = loopNoise(t, 1.2, 9, 0);          // 1.2 秒内循环 9 次
+p.glow(0, -30, 26, hex("#ffc23d"), 0.4 + flicker * 0.12);
+```
 
-kit 是全部工具的对象形式；shell 是自动挂载用的界面生成，可自己复用；
-`installKit(window)` 手动发布全局（manual 模式下不会自动执行）。
+### 4.4 粒子系统（模拟型特效用）
+
+粒子容器在 `create(o)` 里创建，`update(dt)` 推进，`draw(p)` 绘制。
+粒子自带重力、阻力、落地反弹，不用你写物理。
+
+```js
+new Particles({ rng: R, ground: () => 0 })   // 容器；ground 是地面 y，反弹用
+ps.spawn(kind, x, y, vx, vy, life)           // 发射一个：kind 见下，速度单位 像素/秒
+ps.update(dt)                                // 推进
+ps.draw(p)                                   // 画到当前层
+ps.list                                      // 粒子数组，可遍历改属性
+```
+
+**kind**：`P.SPARK`(线状火花) `P.SMOKE`(烟团) `P.BIT`(方块碎屑) `P.FLAME`(火焰舌) `P.EMBER`(火星)。
+
+```js
+new Lights()                       // 光源容器
+lights.add(x, y, r, c, k, life)    // 一个光：半径、颜色、强度、寿命秒
+new Bits()                         // 方块碎屑容器
+```
+
+```js
+// 例：create 路线的完整爆炸
+const fx = {
+  meta: { name: "爆炸", size: [110, 100], origin: [55, 78], duration: 0.9, fps: 30,
+          options: { seed: 11 } },
+  create(o) {
+    const R = new Rng(o.seed);
+    const ps = new Particles({ rng: R });
+    const lights = new Lights();
+    lights.add(0, -14, 46, hex("#fff3a6"), 0.9, 0.22);          // 中心闪光，0.22 秒
+    for (let i = 0; i < 36; i++) {
+      const a = R.range(0, TAU), sp = R.range(90, 300);
+      ps.spawn(P.SPARK, 0, -14, Math.cos(a) * sp, Math.sin(a) * sp - 60, R.range(0.25, 0.6));
+    }
+    let t = 0;
+    return {
+      update(dt) { t += dt; ps.update(dt); lights.update(dt); },
+      draw(p) { ps.draw(p); lights.draw(p); },
+    };
+  },
+};
+```
+
+即时函数（不用容器，纯函数特效直接画）：
+
+```js
+sparkle(p, x, y, r, hot, cold)     // 星芒闪光：r 半径，hot/cold 两阶颜色。命中、暴击用
+flare(p, x, y, r, c, k)            // 十字光芒
+crystal(p, x, y, r, c)             // 晶体碎片
+```
+
+### 4.5 生物绘制（critters 工具箱）
+
+`Grid` 是画角色的核心：在一个离屏网格里拼身体 → 打明暗 → 描 1px 边 → 整体贴到画面。
+好处：明暗和描边对整只角色统一处理，角色还能整体拆成粒子（死亡溶解）。
+
+```js
+const G = new Grid(x0, y0, w, h)   // 网格覆盖的世界范围（origin 是 (0,0)，所以 x0 y0 一般是负的）
+
+G.ellipse(cx, cy, rx, ry, c)       // 椭圆；c 可为 fn(nx, ny)，归一化 -1~1
+G.tube(pts, r, c)                  // 管状（手臂尾巴）：pts 折线点，r 半径可 fn(u)，c 可 fn(u, v)
+G.poly(pts, c)                     // 多边形
+G.line(x0,y0,x1,y1,c)              // 线
+G.sprite(rows, pal, x, y, opts)    // 字符画（同 p.sprite，opts 多 rot / ax / ay 锚点旋转）
+G.shade(x0,y0,x1,y1,fn)            // 像素着色器
+G.set(x, y, c)                     // 单像素
+G.outline(c)                       // 关键：给已画的全部内容描 1px 边
+G.recolor(fn)                      // 重上色（白闪帧用：全部混向白色）
+G.draw(p, fade, dx, dy)            // 贴到画面
+G.clear()                          // 清空（每帧重画前调用）
+```
+
+```js
+// 例：Grid 画一个带明暗的球角色，每帧重建
+const G = new Grid(-20, -40, 40, 40);
+function draw(p, t, o) {
+  G.clear();
+  G.ellipse(0, -16, 9, 10, (nx, ny) => {
+    const light = nx * -0.6 + ny * -0.85;          // 左上光
+    if (light > 0.55) return C[5];
+    if (light > 0.12) return C[4];
+    if (light < -0.4) return C[1];
+    return C[3];
+  });
+  G.outline(C[0]);                                  // 1px 轮廓
+  G.draw(p);                                        // 贴上画面
+}
+```
+
+其他 critters 工具：
+
+```js
+shadow(p, cx, cy, rx, ry, c, a)    // 地面椭圆阴影（画在最底层）
+curve(x, [[t0,v0],[t1,v1],…])      // 关键帧曲线，两端外持平
+spring(age, hz, damp)              // 阻尼弹簧：受击晃动，1 → 衰减震荡
+toss(x,y,vx,vy,age,g,floor)        // 抛物线落点（含落地判断）
+bounce(x,y,vx,vy,age,g,floor,e)    // 弹跳（连续弹到停）
+flight(x,y,vx,vy,age,{g,drag})     // 抛物线加空气阻力，纯函数，火花用
+new Swarm(opts)                    // 声明式粒子群（循环特效用）
+```
+
+```js
+// 例：受击晃动——命中后 0.4 秒内头顶左右摆
+const age = t - hitTime;
+if (age >= 0 && age < 0.4) {
+  const wobble = spring(age, 9, 7);        // 9Hz，衰减 7
+  headX = wobble * 3;
+}
+```
+
+### 4.6 闪电（lightning 工具箱）
+
+```js
+VOLT      // 电色带 8 阶：深紫罗兰 → 电蓝 → 冰白
+PLASMA    // 等离子火花 4 阶（青色系）
+GOLD / WATER / SOOT  // 金 / 水 / 烟灰
+
+zigzag(R, x0, y0, x1, y1, jag, forks)   // 生成闪电形状
+bowed(R, x0,y0,x1,y1, bow, jag)         // 弓形弯曲的
+stroke(p, bolt, k, C, s, o)             // 把闪电画出来
+crackle(p, bolt, k, C, glowK)           // 细电弧（短命的小闪）
+trace(p, pts, c, a, from, to)           // 只画 1px 主干线（引导线、余像）
+```
+
+**`zigzag` 参数**：
+
+- `R` — Rng 实例（决定形状，同 R 同形状）
+- `x0,y0 → x1,y1` — 起终点
+- `jag` — 首段摆幅占长度的比例，0.2~0.4 常用；越大越狂野
+- `forks` — 分叉概率 0~1；0 就是没有分叉的主干
+- 返回 `{ paths: [{ pts, w }] }`，主干在前（w≥1），分叉在后（自动变细）
+
+**`stroke` 参数**：
+
+- `p` 画笔，`bolt` zigzag 的返回，`k` 亮度 0~1（低于 0.5 分叉消失，主干变细）
+- `C` 色带（8 阶，用 VOLT），`s` 粗细倍数（1 是标准，0.7 细）
+- `o` — `{ upTo: 0~1 }` 从头画到某个比例（闪电生长）；`{ hero: true }` 白闪帧；
+  `{ light: 0.5 }` 光强；`{ core: 2 }` 加粗白芯
+
+```js
+// 例：从爪子射向右边的闪电，0.07 秒长到位
+const r = rng(o.seed, 7, f);                              // 每帧新形状
+const bolt = zigzag(r, 17, -11, 119, -18, 0.22, 0.42);
+const age = t - 0.42;                                     // 0.42 秒释放
+stroke(p, bolt, 0.9, VOLT, 1.35, { upTo: clamp(age / 0.07) });
+```
+
+**`crackle` 参数**：`p` `bolt` `k`(0~1) `C` `glowK`(光强)。比 stroke 细，适合贴着物体表面跳的小电弧。
+
+```js
+flight(x, y, vx, vy, age, { g, drag, floor })
+// 抛物线加阻力：返回 [x, y, vx, vy]。g 重力倍数，drag 阻力，floor 地面 y
+// age 是这个粒子已经飞了几秒。纯函数，seek 到任何时刻都能算出正确位置
+```
+
+```js
+// 例：命中点溅出的火花，各自有出生延迟和寿命
+for (let i = 0; i < 7; i++) {
+  const sr = rng(o.seed, 30, i);
+  const life = sr.range(0.18, 0.42), dly = sr.range(0, 0.4);
+  const age = t - hitTime - dly;
+  if (age < 0 || age > life) continue;
+  const [x, y] = flight(hitX, hitY, sr.range(70, 190), sr.range(-80, -14), age, { g: 0.35, drag: 1.8 });
+  p.dot(x, y, hex("#c8f8ff"), 1 - age / life);
+}
+```
+
+### 4.7 火（fire 工具箱）
+
+```js
+tongue(p, x, y, h, w, sway, t, D, n, heat, only)   // 单舌火焰
+firePuff(p, x, y, k, size, seed, heat)             // 火团，k 是剩余寿命 1→0
+smokePuff(p, x, y, size, u, c)                     // 烟团，u 是已过寿命 0→1
+```
+
+**`tongue` 参数**：
+
+- `x, y` — 火舌根部（底座）
+- `h` 高度像素，`w` 根部半宽
+- `sway` — 顶端偏移（摆动量，用 loopNoise 算出来传入）
+- `t` 时间，`D` 循环周期（两者一起保证循环无接缝）
+- `n` — 变化种子（同 n 同形状序列）
+- `heat` — 色带数组，**亮在前**（和外层调色板相反，注意 `C.slice().reverse()`）
+- `only` — 只画某一层（0 最外暗层 … 3 白芯），多根火舌各画各的层能融合成一团
+
+```js
+// 例：三根火舌，各画最外层，融合成一团有层次的火
+const C = fit(o.palette, 6).reverse();             // 亮在前
+tongue(p, -3, -20, 14, 2, sway * 0.7, t, D, 1, C, 0);
+tongue(p, 3, -20, 15, 2, sway * 0.7, t, D, 2, C, 0);
+tongue(p, 0, -21, 22, 3.2, sway, t, D, 3, C);      // 主焰画全部层
+```
+
+### 4.8 其他分类的工具
+
+每个 `src/fx/<分类>/_lib.js` 都被发布为全局。写特效前先看同类的现成特效怎么用，
+比如 `melee/sword-slash.js`（刀光）、`critters/scarecrow2-bunny.js`（稻草人）、
+`lightning/ball-lightning.js`（电球）。`pixelfx.kit` 上能看到全部名字。
 
 ## 6. 开发流程
 
@@ -253,168 +518,465 @@ kit 是全部工具的对象形式；shell 是自动挂载用的界面生成，�
 
 动作类加三条：起手方向与攻击方向相反；释放帧整体变白 60–70ms；命中停 30–200ms。
 
-## 7. 案例
+## 7. 案例（全部来自仓库现成特效）
 
-### 案例 A：稻草人（现成特效，`critters/scarecrow2-bunny.js`）
+以下案例的代码**就是 src/fx 里的源文件**，只去掉了 import 行和 export 关键字，一个字没改。
+每类特效配了两种运行方式：粘进 HTML 直接跑，或用生成器一键出独立页面。
 
-方形麻布头、缝线 X 眼、横条嘴、红补丁、木臂、主杆，随风摇摆，秸秆飘过。
-3.2 秒循环，142×166。
+两种特效形态都覆盖了：
 
-一键生成页面：
+| 案例 | 形态 | 一句话 |
+| --- | --- | --- |
+| Critical hit | 模拟型 | 暴击命中：比普通命中更重的一击——更大的十字闪光、碎裂的环、… |
+| Glitch | 纯函数型 | 信号故障：小人的信号间歇性炸裂——RGB 分离、横向撕裂、行… |
+| Hit spark | 模拟型 | 命中火花：沿打击方向的一道长虹、白色菱形核心、锥形火花与碎屑… |
 
-```bash
-node demo/make-page.mjs critters/scarecrow2-bunny --out scarecrow.html
-```
+---
 
-源码要点：全部画在 Grid 里逐块定位；唯一的运动是整帧绕杆脚的缓慢剪切（shear）、
-杆根秸秆颤动、飘落的碎屑，用 `shift(t, D)` 做循环相位，所以循环无接缝。
+### 案例 A — Critical hit（src/fx/impacts/crit-hit.js）
 
-### 案例 B：自己写一个会摇的稻草人
+**暴击命中：比普通命中更重的一击——更大的十字闪光、碎裂的环、地刺弹出、碎屑与火星四溅。带 0.1 秒命中顿帧。**
 
-```js
-const fx = {
-  meta: { name: "我的稻草人", size: [96, 110], origin: [48, 96], duration: 2.4, loop: true, fps: 30,
-          options: { palette: ["#3a2a18", "#8a6a3a", "#c9a26c", "#e8d8a0"], seed: 3 } },
-  draw(p, t, o) {
-    const D = 2.4, u = t / D;
-    const C = fit(o.palette, 4);
-    const sway = Math.sin(u * TAU) * 0.06;               // 摇摆角
-    shadow(p, sway * 40, 0, 14, 3, hex("#0b0a10"), 0.45);
-    p.beam(0, 0, 0, -58, 3, (uu, v) => (v > 0.7 ? C[0] : C[1]));          // 主杆
-    p.beam(-20, -44, 20, -44, 3, (uu, v) => (v > 0.7 ? C[0] : C[1]));     // 横臂
-    p.rect(-7 + sway * 44, -48, 14, 18, C[1]);           // 身体随杆头轻移
-    p.rect(-3 + sway * 44, -42, 6, 6, C[3]);
-    p.shade(-8 + sway * 44, -66, 8 + sway * 44, -50, (x, y, out) => {
-      out.c = C[2];
-      const lx = x - sway * 44, ly = y + 58;
-      if (Math.abs(Math.abs(lx) - 3.5) < 0.7 && Math.abs(Math.abs(ly) - 3.5) < 0.7) out.c = C[0]; // X 眼
-    });
-    for (let i = 0; i < 6; i++) {                        // 飘草
-      const r = rng(o.seed, i);
-      const q = (u + r.range(0, 1)) % 1;
-      p.dot(r.range(-30, 30), -60 + q * 60, C[3], (1 - q) * 0.8);
-    }
-  },
-};
-```
+| 项 | 值 |
+| --- | --- |
+| 尺寸 | [216, 136] |
+| 时长 | 0.9 秒 |
+| 形态 | 模拟型（create + 手写粒子状态） |
 
-### 案例 C：电球（现成特效，`lightning/ball-lightning.js`，当前模板页就是它）
+**实现要点**
 
-```bash
-node demo/make-page.mjs lightning/ball-lightning
-```
+- create(o) 里用 new Rng(o.seed) 生成一次性的形状参数（地刺的位置、环的缺口、碎屑的轨迹），存进闭包，draw 每帧按已过时间画对应阶段——同种子永远同画面。
+- Particles 和 Bits 两个容器分工：粒子管火星（自带重力和落地反弹），Bits 管方块碎屑（翻转、弹跳、停在地上）。
+- spikes / star / brokenRing 来自 impacts/_lib.js，是命中类特效的现成画法：地刺、星芒、碎裂的环。
+- 阶段划分是打击感的关键：闪光帧、膨胀帧、消散帧各有各的画法，而不是一个形状缩放到底。
 
-源码要点：球心 `at(t)` 是几条不同频率正弦叠加的闭合路径（循环无接缝）；
-球体三层 `p.circle`，颜色取 `VOLT` 色带；每帧 `rng(o.seed, 1, f)` 生成新电弧，f 是帧号；
-余迹是把过去 14 帧的球心按时间衰减重画小号球；下沉到阈值时对地放电一次。
-
-### 案例 D：刀光（`melee/sword-slash.js`，带小人动作）
-
-```bash
-node demo/make-page.mjs melee/sword-slash
-```
-
-两帧挥出的新月，白到深蓝拖尾，剑尖闪光，火花四溅。0.75 秒一次性，带 24×38 标准小人挥剑。
-meta 里声明 `actor: 2` 就有小人；它的动作由导出的 `act` 字段驱动（poses 时间轴 + hits 命中帧）。
-
-自己写一个不带小人的简化刀光：
+粘进 HTML 时，把下面这行加在代码块末尾（运行时读 `fx` 这个名字）：
 
 ```js
-const fx = {
-  meta: { name: "我的刀光", size: [110, 90], origin: [40, 78], duration: 0.4, fps: 30,
-          options: { palette: ["#212f6b", "#2c58aa", "#3a8bd8", "#62c8f4", "#b8c9e8", "#e8f1ff", "#ffffff"], seed: 2 } },
-  draw(p, t, o) {
-    const C = fit(o.palette, 7);
-    const k = clamp(t / 0.4);
-    const a0 = -2.2 + k * 2.4, a1 = a0 + 0.9;
-    p.arc(0, -34, 30 - k * 4, 9 * (1 - k) + 2, a0, a1,
-      (u, v) => C[Math.min(6, 2 + Math.floor((1 - v) * 4))], 1 - k * 0.85);
-    p.arc(0, -34, 28 - k * 4, 2, a1 - 0.5, a1, C[6], (1 - k) * 0.9);   // 白色内芯
-    const tx = Math.cos(a1) * 30, ty = -34 + Math.sin(a1) * 30;       // 剑尖
-    for (let i = 0; i < 5; i++) {
-      const r = rng(o.seed, i, Math.floor(t * 30));
-      const age = t - r.range(0, 0.06);
-      if (age < 0) continue;
-      const [x, y] = flight(tx, ty, r.range(-90, 90), r.range(-140, -30), age, { g: 0.4, drag: 2 });
-      p.dot(x, y, hex("#ffe26b"), 1 - age / 0.3);
-    }
-    p.glow(tx, ty, 14, C[4], (1 - k) * 0.5);
-  },
+// The star, its key frames and the spark spray are adapted from Sprite Fusion's open-source impact
+// (https://www.spritefusion.com/pixel-art-vfx/impact), MIT License, Copyright (c) 2026 Hugo Duprez.
+
+const meta = {
+  name: "Critical hit",
+  desc: "A critical hit: a jagged starburst slams in white and overshoots, a ring breaks into flying arcs, sparks streak off, shards tumble to the floor under a big flare.",
+  tags: ["impact", "hit", "crit", "critical", "combat", "directional", "one-shot"],
+  size: [216, 136],
+  origin: [84, 106],
+  duration: 0.9,
+  loop: false,
+  fps: 30,
+  bg: "ground",
+  options: { palette: ["#2a0510", "#5c0a1c", "#a3142a", "#e0302c", "#ff7a2a", "#ffc23d", "#fff09a", "#ffffff"], height: 26, aim: 0.12, seed: 3 },
 };
+
+// the star's key frames: [from t, scale, thickness, alpha, colors (rim, body, inner, core) as steps of the ramp]
+const KEYS = [
+  [0, 1, 1, 1, [6, 7, 7, 7]],
+  [0.025, 1.3, 1, 1, [2, 5, 6, 7]],
+  [0.058, 1.05, 0.72, 1, [2, 4, 5, 6]],
+  [0.092, 1.22, 0.3, 1, [1, 2, 3, 4]],
+  [0.125],
+];
+
+// a lens flare: a long level streak, thick and white at the heart, a shorter upright one, on a bed of light
+function flare(p, x, y, L, k, C) {
+  for (const [dx, dy, len] of [[1, 0, L], [0, 1, L * 0.45], [0.7, 0.7, L * 0.16], [0.7, -0.7, L * 0.16]])
+    for (const s of [-1, 1])
+      for (let d = 1; d <= len; d++) {
+        const u = d / len, a = u < 0.7 ? 1 : k * (1.6 - u);
+        p.dot(x + s * dx * d, y + s * dy * d, u < 0.35 ? WHITE : u < 0.7 ? C[6] : C[5], a);
+        if (dy === 0 && u < 0.42) for (const e of [-1, 1]) p.dot(x + s * d, y + e, u < 0.2 ? C[6] : C[5], u < 0.3 ? 1 : k);
+      }
+  p.glowLine(x - L, y, x + L, y, 6, C[6], 0.5 * k);
+  p.glowLine(x, y - L * 0.45, x, y + L * 0.45, 4, C[6], 0.3 * k);
+}
+
+function create(o) {
+  const C = fit(o.palette, 8), R = new Rng(o.seed), X = 0, Y = -o.height, A = o.aim, floor = () => 0;
+  const ps = new Particles({ rng: R, ground: floor, sparks: [C[7], C[6], C[5], C[3]] });
+  const bits = new Bits({ ground: floor }), lights = new Lights();
+  const sp = spikes(R, 14, A, { len: [11, 15], w: [1.8, 2.5], fwd: 1.4, back: 0.6, jag: 0.5 });
+  [...sp].sort((a, b) => b.len - a.len).slice(0, 2).forEach((s) => (s.len *= 1.3));
+  const segs = Array.from({ length: 7 }, (_, i) => {
+    const a = A + (i / 7) * TAU;
+    return { a, gap: R.range(0.55, 0.85), dr: R.range(0.08, 0.4) + 0.15 * Math.max(0, Math.cos(a - A)), w: 0.7 + 0.5 * Math.max(0, Math.cos(a - A)) };
+  });
+
+  lights.add(X, Y, 84, C[5], 0.6, 0.5);
+  lights.add(X, Y, 30, WHITE, 0.7, 0.1);
+  lights.add(X, -4, 44, C[4], 0.3, 0.45);
+  // sparks: most sprayed on along the blow, a few kicked back
+  for (let i = 0; i < 36; i++) {
+    const back = R.chance(0.22), a = (back ? A + Math.PI : A) + R.range(-1, 1) * (back ? 0.6 : 0.8), v = R.range(170, 430) * (back ? 0.6 : 1);
+    ps.spawn(P.SPARK, X, Y, Math.cos(a) * v, Math.sin(a) * v - 50, R.range(0.15, 0.5), WHITE, 1, R.chance(0.3) ? R.range(0, 0.04) : 0);
+  }
+  // shards: bright splinters that tumble down, bounce and settle
+  for (let i = 0; i < 10; i++) {
+    const a = A + R.range(-1, 1) * 1.1 - 0.35, v = R.range(110, 280);
+    bits.add({ kind: B.SHARD, x: X, y: Y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 40, g: 0.8, drag: 0.7, bounce: 0.35, life: R.range(0.55, 0.85), a: R.range(0, TAU), va: R.range(-25, 25), s: R.range(2, 4.5), c: R.pick([C[7], C[6], C[6], C[5]]) });
+  }
+  // embers of light drifting up and off, and glints that pop round the ring after the hit
+  for (let i = 0; i < 12; i++) {
+    const a = A - Math.PI / 2 + R.range(-1.4, 1.4), v = R.range(35, 110);
+    ps.spawn(P.MOTE, X + Math.cos(a) * 4, Y + Math.sin(a) * 4, Math.cos(a) * v, Math.sin(a) * v - 15, R.range(0.35, 0.7), R.pick([C[6], C[5], C[5]]), 0.6, R.range(0, 0.05));
+  }
+  for (let i = 0; i < 5; i++) {
+    const a = R.range(0, TAU), d = R.range(14, 34);
+    ps.spawn(P.STAR, X + Math.cos(a) * d, Y + Math.sin(a) * d * 0.8, 0, -4, R.range(0.22, 0.38), R.chance(0.5) ? C[6] : WHITE, R.range(1.6, 3), R.range(0.08, 0.32));
+  }
+
+  let t = 0;
+  return {
+    update(dt) {
+      t += dt;
+      ps.update(dt);
+      bits.update(dt);
+      lights.update(dt);
+    },
+    draw(p) {
+      // the ring: it swells off the star, then breaks into arcs that fly on and cool
+      const u = clamp((t - 0.03) / 0.37);
+      if (t >= 0.03 && u < 1) {
+        const r = 10 + 30 * ease.outCubic(u), brk = smooth(0.12, 0.6, u), th = Math.max(1, 3.6 * Math.pow(1 - u, 1.2));
+        const i = u < 0.12 ? 7 : u < 0.3 ? 6 : u < 0.5 ? 5 : u < 0.75 ? 4 : 3;
+        brokenRing(p, X, Y, r, th, segs, brk, C[i], C[Math.max(2, i - 2)], u < 0.6 ? 1 : (1 - u) / 0.4, 1, 0);
+        if (u < 0.6) p.glowRing(X, Y, r, 6, C[5], 0.35 * Math.pow(1 - u / 0.6, 2));
+      }
+      bits.draw(p);
+      ps.draw(p);
+      // the flare blooms as the star collapses
+      const f = (t - 0.04) / 0.28;
+      if (f > 0 && f < 1) {
+        flare(p, X, Y, 64 * Math.pow(1 - f, 1.3), 1 - f, C);
+        p.glow(X, Y, 56, C[5], 0.4 * (1 - f));
+      }
+      // the starburst slams in: a white frame, an overshoot, a settle, then it breaks up
+      for (let i = 0; i < KEYS.length - 1; i++)
+        if (t >= KEYS[i][0] && t < KEYS[i + 1][0]) {
+          const [, sc, th, a, cols] = KEYS[i];
+          star(p, X, Y, sp, sc, th, cols.map((j) => C[j]), a, 2.6);
+        }
+      const pop = Math.exp(-t / 0.05);
+      if (pop > 0.02) {
+        p.glow(X, Y, 44, C[5], 0.4 * pop);
+        p.glow(X, Y, 12, WHITE, 0.6 * pop);
+      }
+      lights.draw(p);
+    },
+  };
+}
+
+// —— 运行时读这个名字 ——
+const fx = { meta, create };
 ```
 
-### 案例 E：火把（`fire/torch.js`）
+一键生成独立页面：
 
 ```bash
-node demo/make-page.mjs fire/torch
+node demo/make-page.mjs impacts/crit-hit --out crit-hit.html
 ```
 
-铁架墙面火把，舔舐的火舌、脱落的火团、烟、火星、墙上闪动的光。2 秒循环，72×120。
-源码用 fire 工具箱的 `tongue` + `burn`，配合 `loopNoise` 让火苗摆动。
+---
 
-简化版骨架：
+### 案例 B — Glitch（src/fx/scifi/glitch.js）
+
+**信号故障：小人的信号间歇性炸裂——RGB 分离、横向撕裂、行错位、色块噪声、坏像素飞散，然后恢复清晰。2.4 秒循环。**
+
+| 项 | 值 |
+| --- | --- |
+| 尺寸 | [88, 64] |
+| 时长 | 2.4 秒 |
+| 形态 | 纯函数型（draw，逐像素处理角色） |
+
+**实现要点**
+
+- meta.actor: 2 且声明了 act.onBody: true，运行时会把标准小人交给特效：draw 收到的 o.actor 是角色的像素数据 { x, y, w, h, pixels, mask }，特效自己决定画成什么样（这里逐行撕裂重画）。
+- actorAlpha = () => 0 让运行时不再画干净的小人——画面上只有故障版本。
+- BURSTS 声明三次爆发的 [起帧, 止帧, 强度]；每帧 rand(S, f, ...) 取随机，f 是帧号，所以 seek 到任何时刻画面一致。
+- 纯函数型的极致用法：不画自己的东西，而是逐像素改写角色本身。
+
+粘进 HTML 时，把下面这行加在代码块末尾（运行时读 `fx` 这个名字）：
 
 ```js
-const fx = {
-  meta: { name: "我的火把", size: [48, 72], origin: [24, 62], duration: 1.2, loop: true, fps: 30,
-          options: { palette: ["#4a1712", "#c9281f", "#f2561d", "#ff8a2a", "#ffc23d", "#fff3a6"], seed: 4 } },
-  draw(p, t, o) {
-    const C = fit(o.palette, 6), D = 1.2;
-    tongue(p, 0, -20, 22, 3.2, lnoise(t, D, 9, 0) * 2.4, t, D, 3, C.slice().reverse());
-    p.beam(0, -20, 0, 0, 3, hex("#3b2216"));
-    p.rect(-3, -18, 6, 2, hex("#1e1b26"));
-    for (let i = 0; i < 4; i++) {
-      const r = rng(o.seed, i);
-      const q = ((t / D) + r.range(0, 1)) % 1;
-      const [x, y] = flight(r.range(-3, 3), -34, r.range(-14, 14), r.range(-50, -28), q * r.range(0.6, 1), { g: 0.18, drag: 1.2 });
-      p.dot(x, y, hex("#ff8a2a"), 1 - q);
-    }
-    p.glow(0, -30, 26, C[4], 0.4 + lnoise(t, D, 11, 3) * 0.12);
-  },
+const meta = {
+  name: "Glitch",
+  desc: "The hero's signal breaks up in bursts: an RGB split, slices torn sideways, rows smeared out, junk blocks and dead pixels, then snaps back clean.",
+  tags: ["scifi", "glitch", "digital", "corrupt", "hologram", "status", "loop"],
+  size: [88, 64],
+  origin: [44, 54],
+  duration: 2.4,
+  loop: true,
+  fps: 30,
+  bg: "ground",
+  actor: 2,
+  options: { palette: ["#14101f", "#3b1f5c", "#ff2e63", "#ff7aa8", "#2ef2ff", "#b4fbff", "#ffffff"], seed: 7 },
 };
+
+const TWITCH_A = { turn: 0.3, lean: 3, crouch: 1, fx: 13, fy: -31, bx: 6, by: -14, hx: 1 };
+const TWITCH_B = { turn: 1.2, lean: -3, crouch: 0, fx: -9, fy: -14, bx: 14, by: -31, hx: -1 };
+const FINE = {};
+const act = {
+  onBody: true,
+  poses: [
+    [0, FINE],
+    [0.3, TWITCH_A, "snap"],
+    [0.37, TWITCH_B, "snap"],
+    [0.44, TWITCH_A, "snap"],
+    [0.53, FINE, "snap"],
+    [1.1, TWITCH_B, "snap"],
+    [1.23, FINE, "snap"],
+    [1.7, TWITCH_A, "snap"],
+    [1.8, { ...TWITCH_B, crouch: 3 }, "snap"],
+    [1.9, TWITCH_A, "snap"],
+    [2, TWITCH_B, "snap"],
+    [2.07, FINE, "snap"],
+    [2.4, FINE],
+  ],
+};
+
+const FPS = 30, NF = Math.round(meta.duration * FPS);
+// the bursts: [first frame, last frame, how hard]
+const BURSTS = [[9, 16, 0.8], [33, 37, 0.5], [51, 62, 1]];
+
+// the effect draws the hero itself, clean or broken
+const actorAlpha = () => 0;
+
+function draw(p, t, o) {
+  const C = fit(o.palette, 7), A = o.actor, S = o.seed, RED = C[2], CYAN = C[4], f = Math.floor(t * FPS + 1e-6) % NF;
+  const burst = BURSTS.find(([a, b]) => f >= a && f <= b), k = burst ? burst[2] : 0, r = (...n) => rand(S, f, ...n);
+  // what this frame's corruption is
+  const split = burst ? Math.round(1 + r(1) * 3 * k) * (r(2) < 0.5 ? -1 : 1) : 0;
+  const tears = [];
+  if (burst) for (let i = 0; i < 1 + Math.floor(r(3) * 4 * k); i++) tears.push([A.y + Math.floor(r(4, i) * A.h), 1 + Math.floor(r(5, i) * 5), Math.round((r(6, i) - 0.5) * 16 * k), r(7, i)]);
+  // a lone row slips now and then even when it's calm
+  if (!burst && r(8) < 0.07) tears.push([A.y + Math.floor(r(9) * A.h), 1, r(10) < 0.5 ? -2 : 2, 1]);
+  const interlace = burst && r(11) < 0.3, roll = burst && r(12) < 0.15 ? -2 - Math.floor(r(13) * 2) : 0, poster = burst && r(14) < 0.15 * k;
+  const tearAt = (y) => {
+    for (const [y0, h, dx, tint] of tears) if (y >= y0 && y < y0 + h) return [dx, tint];
+    return null;
+  };
+  // the calm signal: a faint bar rolling down the body
+  const bar = A.y + ((t / meta.duration) * 2 * (A.h + 12)) % (A.h + 12) - 6;
+
+  const px = (x, y, c) => p.px(x, y, c);
+  // the split: the red and cyan ghosts first, offset either side
+  if (split)
+    for (let my = 0; my < A.h; my++)
+      for (let mx = 0; mx < A.w; mx++) {
+        if (!A.mask.data[my * A.w + mx]) continue;
+        const y = A.y + my + roll, tr = tearAt(A.y + my), dx = tr ? tr[0] : 0;
+        px(A.x + mx + dx - split, y, RED);
+        px(A.x + mx + dx + split, y, CYAN);
+      }
+  // the body itself, row by row: torn, interlaced, rolled, posterised, tinted where the bar passes
+  for (let my = 0; my < A.h; my++) {
+    const ry = A.y + my, y = ry + roll;
+    if (interlace && (my & 1)) continue;
+    const tr = tearAt(ry), dx = tr ? tr[0] : 0, tint = tr && tr[1] < 0.35 ? (tr[1] < 0.18 ? RED : CYAN) : 0, near = Math.abs(ry - bar);
+    for (let mx = 0; mx < A.w; mx++) {
+      const c = A.pixels[my * A.w + mx];
+      if (!c) continue;
+      let col = c;
+      if (poster) col = luma(c) > 0.32 ? C[5] : C[1];
+      else if (tint) col = mix(c, tint, 0.6);
+      else if (near < 1) col = mix(c, C[5], 0.35);
+      px(A.x + mx + dx, y, col);
+    }
+    // a torn row smears its edge pixel out sideways, fading
+    if (tr && Math.abs(dx) > 2 && rand(S, f, ry) < 0.6) {
+      const right = dx > 0, mx = right ? A.w - 1 - [...Array(A.w)].findIndex((_, i) => A.mask.data[my * A.w + A.w - 1 - i]) : [...Array(A.w)].findIndex((_, i) => A.mask.data[my * A.w + i]);
+      if (mx >= 0 && mx < A.w) {
+        const c = A.pixels[my * A.w + mx], L = 4 + Math.floor(rand(S, f, ry, 1) * 10);
+        for (let i = 1; i <= L; i++) p.dot(A.x + mx + dx + (right ? i : -i), y, c, 1 - i / (L + 1));
+      }
+    }
+  }
+  // a roll leaves the top slice repeated at the bottom
+  if (roll)
+    for (let my = 0; my < -roll; my++)
+      for (let mx = 0; mx < A.w; mx++) {
+        const c = A.pixels[my * A.w + mx];
+        if (c && ((mx + my) & 1)) px(A.x + mx, A.y + A.h + roll + my, mix(c, C[1], 0.5));
+      }
+  // junk blocks round the body
+  if (burst)
+    for (let i = 0; i < 2 + Math.floor(r(20) * 5 * k); i++) {
+      const w = 2 + Math.floor(r(21, i) * 9), h = 1 + Math.floor(r(22, i) * 3), x = A.x - 6 + Math.floor(r(23, i) * (A.w + 12)), y = A.y + Math.floor(r(24, i) * A.h);
+      const c = [WHITE, RED, CYAN, C[5], C[3]][Math.floor(r(25, i) * 5)];
+      if (r(26, i) < 0.4) for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) p.px(x + xx, y + yy, (xx + yy) & 1 ? c : C[0]);
+      else p.rect(x, y, w, h, c);
+    }
+  // dead pixels thrown off by a burst, drifting and blinking out
+  for (const [a, b, kk] of BURSTS) {
+    const age = (f - a + NF) % NF;
+    if (age > b - a + 8) continue;
+    for (let i = 0; i < 10 * kk; i++) {
+      const life = 4 + Math.floor(rand(S, a, i) * 6), at = Math.floor(rand(S, a, i, 1) * (b - a + 1)), q = age - at;
+      if (q < 0 || q > life || (q > life / 2 && (q & 1))) continue;
+      const x0 = A.x + rand(S, a, i, 2) * A.w, y0 = A.y + rand(S, a, i, 3) * A.h, side = rand(S, a, i, 4) < 0.5 ? -1 : 1;
+      p.px(x0 + side * q * (1 + rand(S, a, i, 5) * 2), y0 - q * 0.5, [WHITE, RED, CYAN][i % 3]);
+    }
+  }
+  // light: a cold flicker in the bursts, the split's colors glowing at its edges
+  if (burst) {
+    if (f === burst[0]) p.glow(A.x + A.w / 2, A.y + A.h / 2, 26, C[5], 0.4);
+    p.glow(A.x + A.w / 2 - split * 4, A.y + A.h / 2, 18, RED, 0.18 * k);
+    p.glow(A.x + A.w / 2 + split * 4, A.y + A.h / 2, 18, CYAN, 0.18 * k);
+  }
+  if (Math.abs(bar - (A.y + A.h / 2)) < A.h / 2 + 3) p.glowLine(A.x - 2, bar, A.x + A.w + 2, bar, 4, C[4], 0.12);
+}
+
+// —— 运行时读这个名字 ——
+const fx = { meta, draw, act, actorAlpha };
 ```
 
-### 案例 F：爆炸（模拟型，create 路线）
+一键生成独立页面：
+
+```bash
+node demo/make-page.mjs scifi/glitch --out glitch.html
+```
+
+---
+
+### 案例 C — Hit spark（src/fx/impacts/hit-spark.js）
+
+**命中火花：沿打击方向的一道长虹、白色菱形核心、锥形火花与碎屑落地弹跳。0.5 秒一次性。**
+
+| 项 | 值 |
+| --- | --- |
+| 尺寸 | [136, 80] |
+| 时长 | 0.5 秒 |
+| 形态 | 模拟型（create + 手写粒子状态） |
+
+**实现要点**
+
+- 手写模拟型的范本：create(o) 里用 new Rng(o.seed) 生成一次性的形状参数（每道射线的角度、长度、粗细），存进闭包，draw 每帧按已过时间画对应阶段。
+- Particles({ rng, ground }) 的粒子自带重力、落地反弹；P.SPARK 是线状火花，P.GRIT 是碎屑。
+- lights.add(...) 三个光源分层爆闪；draw 里用 Math.exp(-t / 0.045) 做光的指数衰减。
+- 阶段划分：t<0.025 全十字闪光，t<0.058 十字变细变长，t<0.092 只剩主射线烧尽——每一阶段画法都不同，这是打击感的关键。
+
+粘进 HTML 时，把下面这行加在代码块末尾（运行时读 `fx` 这个名字）：
 
 ```js
-const fx = {
-  meta: { name: "我的爆炸", size: [110, 100], origin: [55, 78], duration: 0.9, fps: 30,
-          options: { palette: ["#3a1a10", "#c9281f", "#f2561d", "#ff8a2a", "#ffc23d", "#fff3a6"], seed: 11 } },
-  create(o) {
-    const R = new Rng(o.seed), C = fit(o.palette, 6);
-    const ps = new Particles({ rng: R }), lights = new Lights();
-    lights.add(0, -14, 46, C[5], 0.9, 0.22);
-    for (let i = 0; i < 36; i++) {
-      const a = R.range(0, TAU), sp = R.range(90, 300);
-      ps.spawn(P.SPARK, 0, -14, Math.cos(a) * sp, Math.sin(a) * sp - 60, R.range(0.25, 0.6));
-    }
-    for (let i = 0; i < 8; i++) {
-      const a = R.range(0, TAU);
-      ps.spawn(P.SMOKE, Math.cos(a) * 6, -14 + Math.sin(a) * 6, Math.cos(a) * 30, Math.sin(a) * 30 - 40, R.range(0.6, 1.1));
-    }
-    let t = 0;
-    return {
-      update(dt) { t += dt; ps.update(dt); lights.update(dt); },
-      draw(p) {
-        const k = clamp(t / 0.9);
-        if (t < 0.12) sparkle(p, 0, -14, 10 * (1 - t / 0.12), C[5], C[3]);
-        if (t < 0.3) p.circle(0, -14, 6 + k * 22, C[3 - Math.floor(k * 3)], (1 - k) * 0.9);
-        ps.draw(p); lights.draw(p);
-      },
-    };
-  },
+// The two-tone spark spray and the light pop are adapted from Sprite Fusion's open-source impact
+// (https://www.spritefusion.com/pixel-art-vfx/impact), MIT License, Copyright (c) 2026 Hugo Duprez.
+
+const meta = {
+  name: "Hit spark",
+  desc: "The everyday hit: a sharp, lopsided cross flare with one long ray along the blow round a white diamond core, then a cone of sparks and hot chips that fall and bounce.",
+  tags: ["impact", "hit", "spark", "combat", "directional", "one-shot"],
+  size: [136, 80],
+  origin: [44, 64],
+  duration: 0.5,
+  loop: false,
+  fps: 30,
+  bg: "ground",
+  options: { palette: ["#4a1712", "#c9281f", "#f2561d", "#ff8a2a", "#ffe26b", "#fff3a6", "#ffffff"], height: 20, aim: 0.1, seed: 4 },
 };
+
+// one ray of the cross: fat at the root, a hair at the tip, white cooling outward; from..to draws a stretch of it
+function ray(p, x, y, a, L, w, C, from = 0) {
+  const c = Math.cos(a), s = Math.sin(a);
+  for (let d = from * L; d <= L; d += 0.5) {
+    const u = d / L, hw = w * Math.pow(1 - u, 1.6);
+    const col = u < 0.3 ? WHITE : u < 0.62 ? C[5] : u < 0.88 ? C[4] : C[3];
+    p.px(x + c * d, y + s * d, col);
+    if (hw > 0.45) for (let o = 0.5; o <= hw; o += 0.5) for (const e of [-o, o]) p.px(x + c * d - s * e, y + s * d + c * e, u < 0.3 && o < 1 ? C[5] : C[4]);
+  }
+}
+
+// the core: a crisp white diamond with a pale rim
+function diamond(p, x, y, r, C) {
+  for (let dy = -r - 1; dy <= r + 1; dy++)
+    for (let dx = -r - 1; dx <= r + 1; dx++) {
+      const m = Math.abs(dx) + Math.abs(dy);
+      if (m <= r) p.px(x + dx, y + dy, WHITE);
+      else if (m === r + 1) p.px(x + dx, y + dy, C[3]);
+    }
+}
+
+function create(o) {
+  const C = fit(o.palette, 7), R = new Rng(o.seed), X = 0, Y = -o.height, A = o.aim, floor = () => 0;
+  const ps = new Particles({ rng: R, ground: floor, sparks: [C[6], C[5], C[4], C[2]] });
+  const lights = new Lights();
+  // the cross: a long thin ray along the blow, a stub behind, two unequal arms across, and a glint between
+  const tilt = R.range(-0.08, 0.08);
+  const rays = [
+    { a: A + tilt, L: R.range(33, 37), w: 2.2 },
+    { a: A + Math.PI + tilt, L: R.range(8, 10), w: 2.2 },
+    { a: A - Math.PI / 2 + tilt, L: R.range(15, 18), w: 2.6 },
+    { a: A + Math.PI / 2 + tilt, L: R.range(10, 12), w: 2.3 },
+    { a: A - Math.PI / 4 + tilt, L: R.range(5, 7), w: 1 },
+  ];
+
+  lights.add(X, Y, 38, C[4], 0.35, 0.18);
+  lights.add(X + Math.cos(A) * 10, Y + Math.sin(A) * 10, 22, C[5], 0.45, 0.1);
+  lights.add(X, -2, 26, C[3], 0.22, 0.22);
+  // a cone of sparks sprayed on along the blow: they fall, bounce off the floor and die
+  for (let i = 0; i < 9; i++) {
+    const a = A + R.range(-0.6, 0.6) - 0.15, v = R.range(170, 360);
+    ps.spawn(P.SPARK, X + 1, Y, Math.cos(a) * v, Math.sin(a) * v - 40, R.range(0.25, 0.45), WHITE, 1, i > 6 ? R.range(0.01, 0.03) : 0);
+  }
+  // hot pixel chips knocked off, tumbling down to tick off the floor
+  for (let i = 0; i < 6; i++) {
+    const a = A + R.range(-1.1, 0.5) - 0.3, v = R.range(70, 170);
+    ps.spawn(P.GRIT, X + 1, Y, Math.cos(a) * v, Math.sin(a) * v - R.range(30, 80), R.range(0.35, 0.45), R.pick([C[5], C[4], C[4], C[3]]), 1);
+  }
+
+  let t = 0;
+  return {
+    update(dt) {
+      t += dt;
+      ps.update(dt);
+      lights.update(dt);
+    },
+    draw(p) {
+      ps.draw(p);
+      if (t < 0.025) {
+        // the flash: the whole cross round the diamond
+        for (const r of rays) ray(p, X, Y, r.a, r.L, r.w, C);
+        diamond(p, X, Y, 4, C);
+      } else if (t < 0.058) {
+        // reaching further and thinning, the diamond still crisp
+        for (const r of rays) ray(p, X, Y, r.a, r.L * 1.2, r.w * 0.55, C, 0.12);
+        diamond(p, X, Y, 3, C);
+      } else if (t < 0.092) {
+        // only the long ray lingers, its root burning away
+        const r = rays[0];
+        ray(p, X, Y, r.a, r.L * 1.3, 0.6, [C[0], C[1], C[2], C[3], C[3], C[4]], 0.4);
+      }
+      const pop = Math.exp(-t / 0.045);
+      if (pop > 0.02) {
+        p.glow(X, Y, 22, C[4], 0.3 * pop);
+        p.glow(X, Y, 7, WHITE, 0.15 * pop);
+        p.glowLine(X, Y, X + Math.cos(A) * 26, Y + Math.sin(A) * 26, 4, C[5], 0.25 * pop);
+      }
+      lights.draw(p);
+    },
+  };
+}
+
+// —— 运行时读这个名字 ——
+const fx = { meta, create };
 ```
 
-### 案例 G：把 246 个现成特效当素材库
+一键生成独立页面：
 
-不一定要自己画。`src/fx` 下按分类整理了 246 个：melee 近战、fire 火、lightning 电、
-explosions 爆炸、ice 冰、water 水、shadow 暗、holy 圣、weather 天气、ui 界面反馈、
-critters 生物（含稻草人）……
+```bash
+node demo/make-page.mjs impacts/hit-spark --out hit-spark.html
+```
 
-列出全部：`node tools/list.mjs fire`，或看 `docs/CATALOG.md`（全量 id/尺寸/时长/描述）。
+---
 
-搬进页面：`node demo/make-page.mjs <分类>/<名字> [--out 文件.html]`
+### 想要更多？
+
+仓库里有 246 个现成特效，全部可以这样搬：
+
+```bash
+node tools/list.mjs fire            # 按关键词过滤
+cat docs/CATALOG.md                 # 全量目录（id / 尺寸 / 时长 / 描述）
+node demo/make-page.mjs <分类>/<名字> --out 页面.html
+```
 
 ## 8. 常见问题
 

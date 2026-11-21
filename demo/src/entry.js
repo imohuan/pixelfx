@@ -3,12 +3,14 @@
 // After it loads, a page is one plain script holding `fx`. Every name an effect file imports from src/core
 // and the fx kits is already global, so an effect body can be used as it is.
 
-import { kit as modules } from "./kit.js";
+import { kit } from "./kit.js";
 import { create, drawTo, toDataURL, withDefaults } from "./player.js";
 import { buildShell, fitScale, showFacts } from "./ui.js";
 
 /** Every name an effect may use without importing it. */
-export const kit = modules;
+export { kit };
+
+// Built by demo/build.mjs alongside kit.js.
 
 const OWN = new Set(["meta", "draw", "drawBack", "create", "act", "update"]);
 

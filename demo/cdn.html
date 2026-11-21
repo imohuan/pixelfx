@@ -1,0 +1,21 @@
+<!doctype html>
+<script src="https://cdn.jsdelivr.net/gh/imohuan/pixelfx@v0.4.0/demo/pixelfx.js"></script>
+<script>
+const fx = {
+  meta: { name: "我的火把", size: [48, 72], origin: [24, 62], duration: 1.2, loop: true, fps: 30,
+          options: { palette: ["#4a1712", "#c9281f", "#f2561d", "#ff8a2a", "#ffc23d", "#fff3a6"], seed: 4 } },
+  draw(p, t, o) {
+    const C = fit(o.palette, 6), D = 1.2;
+    tongue(p, 0, -20, 22, 3.2, lnoise(t, D, 9, 0) * 2.4, t, D, 3, C.slice().reverse());
+    p.beam(0, -20, 0, 0, 3, hex("#3b2216"));
+    p.rect(-3, -18, 6, 2, hex("#1e1b26"));
+    for (let i = 0; i < 4; i++) {
+      const r = rng(o.seed, i);
+      const q = ((t / D) + r.range(0, 1)) % 1;
+      const [x, y] = flight(r.range(-3, 3), -34, r.range(-14, 14), r.range(-50, -28), q * r.range(0.6, 1), { g: 0.18, drag: 1.2 });
+      p.dot(x, y, hex("#ff8a2a"), 1 - q);
+    }
+    p.glow(0, -30, 26, C[4], 0.4 + lnoise(t, D, 11, 3) * 0.12);
+  },
+};
+</script>
