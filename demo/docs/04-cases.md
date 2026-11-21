@@ -449,6 +449,93 @@ node demo/make-page.mjs impacts/hit-spark --out hit-spark.html
 
 ---
 
+## 7b. 一个特效里调用另一个特效（chain）
+
+有些特效是“多个特效按时间线拼出来”的。典型是 moves/arrow-shot：小人射箭，
+箭飞出去（projectiles/arrow 特效），命中瞬间炸出火花（impacts/hit-spark 特效）。
+仓库自带一个组合器 chain，专门干这件事。
+
+### chain 的用法
+
+```js
+import { chain } from "../../core/index.js";      // 全局已提供，不用 import
+import * as arrow from "../projectiles/arrow.js"; // 被调用的特效模块
+import * as spark from "../impacts/hit-spark.js";
+
+export const create = (o) => chain([
+  // 一个 cue = 一个被调用的特效
+  { fx: arrow,                    // 特效模块（有 meta + draw 或 create 的那个对象）
+    t: 0.56,                      // 几秒后开始画它
+    until: 0.8,                   // 到几秒为止（省略则画到它自己播完）
+    x: (t) => 30 + (t - 0.56) * 625,  // 位置；数字或 t 的函数（箭就是这么飞的）
+    y: -28,                       // y 同样可以是函数
+    flip: false,                  // 水平镜像
+    seed: 9,                      // 传给它的 options
+  },
+  { fx: spark, t: 0.8, x: 170, height: 30 },   // 命中时炸火花
+])(o);
+```
+
+**cue 字段**
+
+| 字段 | 说明 |
+| --- | --- |
+| `fx` | 被调用的特效**模块**——就是那个 `{ meta, draw }` 或 `{ meta, create }` 对象 |
+| `t` | 它几点开始（秒，相对本特效的时间轴） |
+| `until` | 几点停（省略则画到它自己 duration 结束） |
+| `x`, `y` | 摆放位置。**可以是 `(t) => …` 函数**——投影类特效全靠这个飞 |
+| `flip` | 水平镜像 |
+| 其余 | 原样作为 options 传给它（palette、seed、自定参数）；seed 默认自动 +1，避免随机序列和主特效相同 |
+
+chain 返回一个标准的 create 结果（update / drawBack / draw），所以从外面看它就是一个普通特效：
+可以再被别人 chain、可以 seek、可以导出精灵图。
+
+### 只叠一帧（不用 chain）
+
+只是想在特效里“叠”另一个特效，不需要时间线，用 createFx 自己管理：
+
+```js
+export function create(o) {
+  const inner = createFx(arrow, { x: 100, y: -20, seed: o.seed });
+  let t = 0;
+  return {
+    update(dt) { t += dt; inner.update(dt); },
+    draw(p) { inner.draw(p); /* 再画你自己的东西 */ },
+  };
+}
+```
+
+### 粘贴进 HTML 时怎么拿到模块
+
+chain 需要被调用的特效是**模块对象**（`{ meta, draw }` 或 `{ meta, create }`）。两种方式：
+
+1. **用生成器（推荐）**：`node demo/make-page.mjs moves/arrow-shot --out arrow.html`——
+   esbuild 把箭和火花模块一起打进那个页面，双击就能跑。
+2. **手写页面**：先定义特效对象，再传给 chain：
+
+```js
+const arrow = { meta: {...}, draw(p, t, o) {...} };   // 从 src/fx/projectiles/arrow.js 抄来
+const spark = { meta: {...}, create(o) {...} };       // 从 src/fx/impacts/hit-spark.js 抄来
+const fx = {
+  meta: { name: "我的射箭", size: [300, 74], origin: [38, 66], duration: 1.9, fps: 30 },
+  create: (o) => chain([
+    { fx: arrow, t: 0.56, until: 0.8, x: (t) => 30 + (t - 0.56) * 625, y: -28 },
+    { fx: spark, t: 0.8, x: 170, height: 30 },
+  ])(o),
+};
+```
+
+### 案例对照
+
+| 案例文件 | 组合了什么 |
+| --- | --- |
+| `moves/arrow-shot` | projectiles/arrow（箭）+ impacts/hit-spark（命中火花） |
+| `moves/fireball-throw` | projectiles/fireball + explosions/small-explosion |
+| `moves/ice-lance-throw` | projectiles/ice-lance + 命中特效 |
+| `moves/lightning-call` | 天上落雷 + 地面命中 |
+
+想看更多组合写法，直接读 `src/fx/moves/` 目录——每个文件都是“小人动作 + 若干特效按时间线”的完整例子。
+
 ### 想要更多？
 
 仓库里有 246 个现成特效，全部可以这样搬：
