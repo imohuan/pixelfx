@@ -119,24 +119,50 @@ interface FxOptions {
  * c（颜色）和 a（透明度）在所有形状方法里都可以是函数——每个方法的回调参数不同，见第 3 章的表。
  */
 interface Painter {
+  /** 一个不透明像素。坐标可以是小数，落到最近的像素格。 */
   px(x: number, y: number, c: number): void;
+  /**
+   * 一个带透明度的像素。a 低于 1 时用 4×4 棋盘抖动实现——
+   * 这是像素画淡出的标准做法（火花熄灭、余迹消散都用它）。
+   */
   dot(x: number, y: number, c: number, a?: number): void;
+  /** 真透明混合，颜色平滑过渡。只有烟、雾这类没有硬边的东西才用它。 */
   blend(x: number, y: number, c: number, a: number): void;
+  /** 只往光层加光，不动颜色。配合 glow 照亮周围。 */
   light(x: number, y: number, c: number, k?: number): void;
+  /** 1px 线。c/a 可以是 (u) => 值，u 是 0 起点→1 终点的进度——做拖尾、渐隐的引线。 */
   line(x0: number, y0: number, x1: number, y1: number, c: MaybeFn1, a?: MaybeFn1): void;
+  /** 有宽度的圆头线段。c 是 (u, v)：u 沿线进度，v 0 中心→1 边缘——光束、手臂、杆子。 */
   beam(x0: number, y0: number, x1: number, y1: number, w: number, c: MaybeFn2, a?: MaybeFn2): void;
+  /** 圆盘。c 是 (d, ang)：d 0 中心→1 边缘，ang 弧度——按方向挑明暗（左上受光的球）。 */
   circle(cx: number, cy: number, r: number, c: MaybeFnD, a?: MaybeFnD): void;
+  /** 椭圆，回调同 circle。压扁的球、身体块。 */
   ellipse(cx: number, cy: number, rx: number, ry: number, c: MaybeFnD, a?: MaybeFnD): void;
+  /** 圆环，w 是厚度。c 是 (v, ang)：v 0 内沿→1 外沿。冲击波。 */
   ring(cx: number, cy: number, r: number, w: number, c: MaybeFnRing, a?: MaybeFnRing): void;
+  /** 弧段，a0/a1 起止角（弧度）。c 是 (u, v)：u 沿弧进度——刀光新月、扇形。 */
   arc(cx: number, cy: number, r: number, w: number, a0: number, a1: number, c: MaybeFn2, a?: MaybeFn2): void;
+  /** 实心矩形。方块身体、补丁。 */
   rect(x: number, y: number, w: number, h: number, c: number, a?: number): void;
+  /** 多边形（偶奇填充）。耳朵、多边形色块。 */
   poly(pts: [number, number][], c: MaybeFnXY, a?: MaybeFnXY): void;
+  /** 三角形。 */
   tri(x0: number, y0: number, x1: number, y1: number, x2: number, y2: number, c: MaybeFnXY, a?: MaybeFnXY): void;
+  /**
+   * 像素着色器：对包围盒内每个像素调一次 fn。
+   * fn(x, y, out) 返回颜色（或 0 = 不画），也可写 out.c / out.a / out.k（该像素的额外光强）。
+   * 完全自定义形状的唯一出口：方块加缝线 X 眼、逐像素噪声地形。
+   */
   shade(x0: number, y0: number, x1: number, y1: number, fn: (x: number, y: number, out: { c?: number; a?: number; k?: number }) => number | void): void;
+  /** 径向光晕：加进光层，中心强度 k，向外衰减到 0。发光的东西先画实色再补它。 */
   glow(x: number, y: number, r: number, c: number, k?: number): void;
+  /** 沿线段的光带。刀光的亮边、激光。 */
   glowLine(x0: number, y0: number, x1: number, y1: number, r: number, c: number, k?: number): void;
+  /** 环形光：R 环半径，r 衰减厚度。冲击波扩散。 */
   glowRing(x: number, y: number, R: number, r: number, c: number, k?: number): void;
+  /** 字符画：一个字符一个像素，"." 和空格是空。耳朵、尾巴这类轮廓特征强的部分用它最清楚。 */
   sprite(rows: string[], pal: Record<string, string>, x: number, y: number, opts?: { scale?: number; flip?: boolean; flipY?: boolean; tint?: number; a?: number }): void;
+  /** 像素文字：mini 3×5 / big 5×7，可带描边和阴影。伤害数字、倒计时。 */
   text(str: string, x: number, y: number, c: number, opts?: { font?: "mini" | "big"; scale?: number; align?: "left" | "center" | "right"; outline?: number; shadow?: number; a?: number }): void;
 }
 
