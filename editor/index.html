@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>rig editor · pixelfx</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Funnel+Sans:wght@400;500&family=Red+Hat+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="head">
+  <div class="title">
+    <svg class="mark" viewBox="0 0 7 7" shape-rendering="crispEdges" role="img" aria-label="Patch"><rect x="1" y="1" width="6" height="6" fill="#ffffff"/><rect x="0" y="0" width="3" height="3" fill="#f53cd1"/></svg>
+    <div>
+      <h1>rig editor.</h1>
+      <p class="sub">拖动手和脚，骨架自动跟着弯；滑块调身体，导出 pose 代码。</p>
+    </div>
+  </div>
+  <nav class="links">
+    <a href="/">home</a>
+    <a href="/gallery/">gallery</a>
+  </nav>
+</header>
+<main class="editor">
+  <div>
+    <div class="stagewrap"><canvas id="stage" width="480" height="420"></canvas></div>
+    <div class="stagebar">
+      <button class="btn" id="skel" type="button" aria-pressed="true">skeleton</button>
+      <span id="warn"></span>
+      <span class="hint">粉点拖动跟手，root 调蹲，脚尖用右侧开关</span>
+    </div>
+  </div>
+  <div class="info">
+    <div class="code-head"><span>presets</span></div>
+    <div class="row" id="presets"></div>
+    <div class="code-head"><span>actions</span></div>
+    <div class="row"><input id="act-search" type="search" placeholder="搜索动作…" autocomplete="off" aria-label="Search actions"></div>
+    <div class="row" id="act-cats"></div>
+    <div class="act-list" id="actions"></div>
+    <div class="playbar" id="playbar" hidden>
+      <div class="row">
+        <label>play</label>
+        <button class="btn" id="act-play" type="button">pause</button>
+        <button class="btn" id="act-restart" type="button">restart</button>
+      </div>
+      <div class="row">
+        <label>speed</label>
+        <input type="range" id="act-speed" min="0.1" max="2" step="0.1" value="1" aria-label="Playback speed">
+        <span class="val" id="act-speed-v">1x</span>
+      </div>
+      <div class="row">
+        <label>yaw</label>
+        <input type="range" id="act-yaw" min="-180" max="180" step="5" value="0" aria-label="Overlay yaw">
+        <span class="val" id="act-yaw-v">0&deg;</span>
+      </div>
+      <div class="row">
+        <label>frame</label>
+        <input type="range" id="act-frame" min="0" max="0" step="1" value="0" aria-label="Frame">
+        <span class="val" id="act-frame-v">0</span>
+      </div>
+    </div>
+    <div class="code-head"><span>skin</span></div>
+    <div class="row" id="skins"></div>
+    <div class="code-head"><span>body</span></div>
+    <div id="sliders"></div>
+    <div class="code-head"><span>feet</span></div>
+    <div class="row" id="feet"></div>
+    <div class="code-head"><span>handles</span></div>
+    <dl class="facts" id="facts"></dl>
+    <div class="code-head"><span>export</span><button class="btn" id="copy" type="button">copy</button></div>
+    <pre id="out"></pre>
+  </div>
+</main>
+<script type="module" src="editor.js"></script>
+</body>
+</html>
+

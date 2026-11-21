@@ -1,0 +1,87 @@
+/* rig editor: same single dark theme as the gallery (see docs/UI-STYLE.md). */
+@font-face {
+  font-family: "Patch Pixel";
+  font-weight: 400;
+  font-display: swap;
+  src: url(../gallery/fonts/PatchPixel-Regular.woff2) format("woff2");
+}
+:root {
+  --ground: #000000;
+  --panel: #111111;
+  --stage: #15131d;
+  --ink: #ffffff;
+  --quiet: #999999;
+  --line: #333333;
+  --patch: #f53cd1;
+  --display: "Patch Pixel", ui-monospace, "SFMono-Regular", monospace;
+  --text: "Funnel Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Red Hat Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { background: var(--ground); }
+body { margin: 0; background: var(--ground); color: var(--ink); font: 400 15px/1.5 var(--text); padding-block: 0 48px; }
+a { color: inherit; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+.head {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding-block: 32px 20px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.title { display: flex; gap: 18px; align-items: flex-start; }
+.mark { width: 42px; height: 42px; flex: none; image-rendering: pixelated; margin-top: 4px; }
+h1 { margin: 0; font: 400 54px/66px var(--display); }
+.sub { margin: 4px 0 0; font: 500 17px/1.4 var(--text); color: var(--quiet); }
+.links { display: flex; gap: 20px; font: 500 13px/1 var(--mono); letter-spacing: 0.04em; }
+.links a { text-decoration: none; color: var(--quiet); padding: 6px 0; border-bottom: 1px solid var(--line); }
+.links a:hover { color: var(--ink); border-color: var(--ink); }
+
+.editor {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding-top: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 28px;
+  align-items: start;
+}
+.stagewrap { background: var(--stage); border: 1px solid var(--stage); }
+.stagewrap canvas { width: 100%; display: block; image-rendering: pixelated; touch-action: none; cursor: default; }
+.stagebar { display: flex; gap: 12px; align-items: center; padding-top: 10px; font: 400 12px/1 var(--mono); color: var(--quiet); }
+.stagebar .hint { margin-left: auto; }
+#warn { color: var(--patch); }
+
+.info { display: flex; flex-direction: column; gap: 10px; }
+.code-head { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font: 400 11px/1 var(--mono); color: var(--quiet); letter-spacing: 0.04em; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.row label { font: 400 11px/1 var(--mono); color: var(--quiet); width: 72px; letter-spacing: 0.04em; }
+.btn { border: 1px solid var(--line); background: none; padding: 6px 9px; font: 500 12px/1 var(--mono); cursor: pointer; }
+.btn:hover { border-color: var(--quiet); }
+.btn[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--patch); }
+.val { font: 400 12px/1 var(--mono); width: 48px; text-align: right; color: var(--quiet); font-variant-numeric: tabular-nums; }
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; font: 400 12px/1.5 var(--mono); margin: 0; }
+.facts dt { color: var(--quiet); }
+.facts dd { margin: 0; font-variant-numeric: tabular-nums; }
+pre { margin: 0; background: var(--panel); border: 1px solid var(--line); padding: 12px; font: 400 12px/1.5 var(--mono); overflow-x: auto; white-space: pre; }
+
+@media (max-width: 900px) {
+  .editor { grid-template-columns: minmax(0, 1fr); }
+  h1 { font-size: 36px; line-height: 44px; }
+  .mark { width: 28px; height: 28px; }
+}
+
+.act-list { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--line); padding: 4px; }
+.act-list .btn { text-align: left; border-color: transparent; }
+.act-list .btn:hover { border-color: var(--quiet); }
+.act-list .count { font: 400 11px/1 var(--mono); color: var(--quiet); padding: 6px 2px; letter-spacing: 0.04em; }
+.empty-note { font: 400 12px/1.4 var(--mono); color: var(--quiet); }
+.playbar { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); padding: 10px; }
+@media (max-width: 900px) {

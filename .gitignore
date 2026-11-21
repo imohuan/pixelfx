@@ -11,3 +11,6 @@ sheets/
 .codegraph/
 .cursor/
 records/
+
+# 动作素材下载目录（约 730MB，重新下载即可，不入库）
+motion-source/
