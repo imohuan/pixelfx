@@ -71,6 +71,7 @@ h1 { margin: 0; font: 400 54px/66px var(--display); letter-spacing: 0; }
 }
 .bar-in { max-width: 1240px; margin: 0 auto; display: flex; gap: 12px; align-items: center; padding-block: 10px; }
 .chips { display: flex; flex-wrap: wrap; gap: 5px; flex: 1; min-width: 0; padding-block: 2px; }
+#reload { flex: none; }
 .chips::-webkit-scrollbar { display: none; }
 .chip {
   flex: none;

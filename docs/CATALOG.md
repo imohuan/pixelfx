@@ -1,6 +1,6 @@
 # Catalog
 
-244 effects in 21 categories. Every one is a file in
+248 effects in 21 categories. Every one is a file in
 `src/fx/<category>/<name>.js`; render any of them with `node tools/render.mjs <id> --gif`.
 
 ## moves
@@ -390,6 +390,10 @@ slimes, bats, ghosts, frogs.
 | Frog | `critters/frog` | loop 2.6s | 112×88 | A frog puffs its throat, blinks, crouches and leaps to snap a buzzing fly out of the air, then lands with a squash and a puff of dust, gulps and settles. |
 | Ghost | `critters/ghost` | loop 2.4s | 96×100 | A sheet ghost bobs over the floor: its scalloped hem ripples and trails its drift, little arms flutter, it glances about and blinks, motes trickle off its hem. |
 | Jellyfish | `critters/jellyfish` | loop 3.2s | 96×120 | A see-through jellyfish pulses: its bell squeezes to shove it up and relaxes as it sinks, frilled arms and long tentacles trailing, a glow inside, bubbles drifting by. |
+| Scarecrow | `critters/scarecrow` | loop 3.2s | 112×108 | A stitched burlap scarecrow sways on its pole: X eyes, a barred mouth, a red coiled patch, straw hands and flecks of straw on the wind. |
+| Scarecrow (Bunny) | `critters/scarecrow2-bunny` | loop 3.2s | 142×166 | A square burlap scarecrow with stitched X eyes, a barred mouth and a red coiled patch, leaning on its pole while straw drifts past. |
+| Scarecrow (PixelPuppet) | `critters/scarecrow2-hy3` | loop 3.2s | 142×166 | A square-faced burlap scarecrow with X eyes, a red spiral patch, straw hands and a gentle looping sway. |
+| Scarecrow (hy4flash) | `critters/scarecrow2-hy4flash` | loop 3.2s | 142×166 | A square burlap scarecrow with X eyes, a red spiral patch, straw hands and a swaying post. |
 | Slime | `critters/slime` | loop 1.8s | 112×88 | A glossy slime hops in place: it squashes to wind up, stretches into the jump, rounds out in the air, splats down flinging droplets that creep back, then wobbles and blinks. |
 | Snake | `critters/snake` | loop 2.4s | 136×56 | A snake slithers along the floor, head raised: humps rise and roll back down its patterned body to the tail, dust puffs where it touches down, its forked tongue flicks. |
 | Wisp | `critters/wisp` | loop 3.2s | 128×104 | A will-o'-the-wisp loops a figure-eight over the floor: a little soul-flame with a face, its flame tail licking up and streaming behind, shedding puffs and sparks. |

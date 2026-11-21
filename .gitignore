@@ -3,3 +3,11 @@ dist/
 records/
 sheets/
 .DS_Store
+
+# local runtime artifacts
+.serve.log
+.serve.err.log
+.check/
+.codegraph/
+.cursor/
+records/

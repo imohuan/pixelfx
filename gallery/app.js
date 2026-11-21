@@ -19,6 +19,25 @@ function el(tag, props = {}, kids = []) {
   return e;
 }
 
+// reload: ask the server to re-run tools/index.mjs (rebuilds src/fx/index.js from the
+// effect files), then refresh so the new list loads. Covers the "I added a file but the
+// gallery doesn't show it" case without touching a terminal.
+$("#reload")?.addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  if (btn.dataset.busy) return;
+  btn.dataset.busy = "1";
+  btn.textContent = "…";
+  try {
+    const r = await fetch("/api/reload", { method: "POST" });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? r.status);
+    location.reload();
+  } catch {
+    btn.textContent = "failed";
+    setTimeout(() => (btn.textContent = "reload"), 1500);
+    delete btn.dataset.busy;
+  }
+});
+
 // ---- a live effect on a canvas, at an integer scale that fits the stage
 class Player {
   constructor(canvas, fx, aspect, pad) {
