@@ -75,6 +75,91 @@
    /** 让运行时不画干净小人（你自己在 draw 里逐像素画它）。配合 meta.actor + act.onBody 用。 */
    actorAlpha?: () => number;
  }
+
+/**
+ * FxOptions：draw/create 第二个（模拟型第一个）参数 o 的类型。
+ * 它没有固定形状——就是 meta.options 里声明的默认值，加上调用方覆盖后的结果。
+ * 常见键的约定如下；你自定的键（radius、count、speed...）也在里面。
+ */
+interface FxOptions {
+  /**
+   * 主色带：暗→亮排列的 hex 字符串数组。
+   * 特效内用 fit(o.palette, N) 取 N 阶：C[0] 最暗，C[N-1] 最亮。
+   * 调用方传任意长度都会被重采样到你在 fit 里声明的 N，不会崩。
+   * 例：["#3a1a10", "#c9281f", "#f2561d", "#ff8a2a", "#ffc23d", "#fff3a6"]
+   */
+  palette: string[];
+
+  /** 随机种子，默认 1。同一 seed 每帧画面完全一致；界面上"换种子"按钮就是改它。 */
+  seed: number;
+
+  /** 你在 meta.options 里声明的其他键，原样出现在这里。 */
+  [key: string]: unknown;
+
+  // —— 以下是运行时注入的内部项，一般不用管 ——
+
+  /** 特效在舞台上的摆放点（画布内 origin 的世界坐标）。chain 会改它。 */
+  x: number;
+  y: number;
+
+  /** 是否水平镜像。界面的"镜像"按钮切换它。 */
+  flip: boolean;
+
+  /**
+   * meta.actor 声明时才有：标准小人的像素数据，供逐像素处理（Glitch 用法）。
+   * pixels 是 w*h 的颜色数组（0 = 空），mask 是 w*h 的 0/1 形状遮罩。
+   * x, y 是小人在局部坐标里的左上角。需要 act.onBody: true + actorAlpha = () => 0。
+   */
+  actor?: { x: number; y: number; w: number; h: number; pixels: number[]; mask: Uint8Array };
+}
+
+/**
+ * Painter：draw 的第一个参数 p。完整方法表见第 3 章，这里只列签名。
+ * 坐标都是特效局部坐标，(0,0) 是 meta.origin。
+ * c（颜色）和 a（透明度）在所有形状方法里都可以是函数——每个方法的回调参数不同，见第 3 章的表。
+ */
+interface Painter {
+  px(x: number, y: number, c: number): void;
+  dot(x: number, y: number, c: number, a?: number): void;
+  blend(x: number, y: number, c: number, a: number): void;
+  light(x: number, y: number, c: number, k?: number): void;
+  line(x0: number, y0: number, x1: number, y1: number, c: MaybeFn1, a?: MaybeFn1): void;
+  beam(x0: number, y0: number, x1: number, y1: number, w: number, c: MaybeFn2, a?: MaybeFn2): void;
+  circle(cx: number, cy: number, r: number, c: MaybeFnD, a?: MaybeFnD): void;
+  ellipse(cx: number, cy: number, rx: number, ry: number, c: MaybeFnD, a?: MaybeFnD): void;
+  ring(cx: number, cy: number, r: number, w: number, c: MaybeFnRing, a?: MaybeFnRing): void;
+  arc(cx: number, cy: number, r: number, w: number, a0: number, a1: number, c: MaybeFn2, a?: MaybeFn2): void;
+  rect(x: number, y: number, w: number, h: number, c: number, a?: number): void;
+  poly(pts: [number, number][], c: MaybeFnXY, a?: MaybeFnXY): void;
+  tri(x0: number, y0: number, x1: number, y1: number, x2: number, y2: number, c: MaybeFnXY, a?: MaybeFnXY): void;
+  shade(x0: number, y0: number, x1: number, y1: number, fn: (x: number, y: number, out: { c?: number; a?: number; k?: number }) => number | void): void;
+  glow(x: number, y: number, r: number, c: number, k?: number): void;
+  glowLine(x0: number, y0: number, x1: number, y1: number, r: number, c: number, k?: number): void;
+  glowRing(x: number, y: number, R: number, r: number, c: number, k?: number): void;
+  sprite(rows: string[], pal: Record<string, string>, x: number, y: number, opts?: { scale?: number; flip?: boolean; flipY?: boolean; tint?: number; a?: number }): void;
+  text(str: string, x: number, y: number, c: number, opts?: { font?: "mini" | "big"; scale?: number; align?: "left" | "center" | "right"; outline?: number; shadow?: number; a?: number }): void;
+}
+
+// 形状方法回调里收到的参数（第 3 章有中文说明）
+type MaybeFn1 = number | ((u: number) => number);                    // u: 0 起点 → 1 终点
+type MaybeFn2 = number | ((u: number, v: number) => number);         // v: 0 中心 → 1 边缘
+type MaybeFnD = number | ((d: number, ang: number) => number);       // d: 0 中心 → 1 边缘, ang 弧度
+type MaybeFnRing = number | ((v: number, ang: number) => number);    // v: 0 内沿 → 1 外沿
+type MaybeFnXY = number | ((x: number, y: number) => number);
+
+/**
+ * Act：小人的动作声明，见 7a 章。字段：
+ *   onBody   特效接管小人（配合 actorAlpha = () => 0）
+ *   poses    [时间秒(相对命中，负=命中前), 姿势对象, 缓动?（"snap" 瞬切）]
+ *   hits     [{ t, stop(顿帧秒), shake(震动秒), amp(震幅px), push(击退px), ... }]
+ * 姿势对象的全部字段（fx/bx 手、crouch 蹲、lean 倾斜、weapon+sa 武器…）见 7a 章的表。
+ */
+interface Act {
+  onBody?: boolean;
+  poses: [number, Record<string, number | boolean | string>, string?][];
+  hits?: { t: number; stop?: number; shake?: number; amp?: number; push?: number }[];
+  target?: { x: number };
+}
  
  interface FxMeta {
    /** 标题，显示在页面最上方 */
