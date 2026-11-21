@@ -241,10 +241,8 @@ import * as critters_flying_skull from "./critters/flying-skull.js";
 import * as critters_frog from "./critters/frog.js";
 import * as critters_ghost from "./critters/ghost.js";
 import * as critters_jellyfish from "./critters/jellyfish.js";
-import * as critters_scarecrow from "./critters/scarecrow.js";
+import * as critters_pikachu from "./critters/pikachu.js";
 import * as critters_scarecrow2_bunny from "./critters/scarecrow2-bunny.js";
-import * as critters_scarecrow2_hy3 from "./critters/scarecrow2-hy3.js";
-import * as critters_scarecrow2_hy4flash from "./critters/scarecrow2-hy4flash.js";
 import * as critters_slime from "./critters/slime.js";
 import * as critters_snake from "./critters/snake.js";
 import * as critters_wisp from "./critters/wisp.js";
@@ -493,10 +491,8 @@ export const effects = {
   "critters/frog": critters_frog,
   "critters/ghost": critters_ghost,
   "critters/jellyfish": critters_jellyfish,
-  "critters/scarecrow": critters_scarecrow,
+  "critters/pikachu": critters_pikachu,
   "critters/scarecrow2-bunny": critters_scarecrow2_bunny,
-  "critters/scarecrow2-hy3": critters_scarecrow2_hy3,
-  "critters/scarecrow2-hy4flash": critters_scarecrow2_hy4flash,
   "critters/slime": critters_slime,
   "critters/snake": critters_snake,
   "critters/wisp": critters_wisp,
