@@ -3,6 +3,8 @@ dist/
 records/
 sheets/
 .DS_Store
+node_modules/
+dist/
 
 # local runtime artifacts
 .serve.log

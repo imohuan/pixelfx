@@ -1,7 +1,7 @@
 {
   "name": "pixelfx",
   "version": "0.3.1",
-  "description": "Code-driven pixel art effects and animations, and a Claude Code skill to make your own.",
+  "description": "Code-driven pixel art effects and animations: 246 effects, a browser player, and a Claude Code skill to make your own.",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -15,7 +15,9 @@
   "scripts": {
     "render": "node tools/render.mjs",
     "check": "node tools/check.mjs",
-    "gallery": "node tools/serve.mjs"
+    "gallery": "node tools/serve.mjs",
+    "build": "node demo/build.mjs",
+    "verify": "node demo/verify.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.10"
