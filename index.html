@@ -2,334 +2,98 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>pixelfx 特效预览</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>pixelfx</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Funnel+Sans:wght@400;500&family=Red+Hat+Mono:wght@400;500&display=swap">
 <style>
-  :root {
-    --bg: #101018;
-    --panel: #181826;
-    --panel-2: #1f1f30;
-    --line: #2c2c42;
-    --text: #e6e4ef;
-    --dim: #8f8cab;
-    --accent: #f53cd1;
-  }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font: 14px/1.5 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
-  }
-  .wrap { max-width: 1180px; margin: 0 auto; padding: 20px 20px 40px; }
+@font-face {
+  font-family: "Patch Pixel";
+  font-weight: 400;
+  font-display: swap;
+  src: url(gallery/fonts/PatchPixel-Regular.woff2) format("woff2");
+}
+:root {
+  --ground: #000000;
+  --panel: #111111;
+  --stage: #15131d;
+  --ink: #ffffff;
+  --quiet: #999999;
+  --line: #333333;
+  --patch: #f53cd1;
+  --display: "Patch Pixel", ui-monospace, "SFMono-Regular", monospace;
+  --text: "Funnel Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Red Hat Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { background: var(--ground); }
+body { margin: 0; background: var(--ground); color: var(--ink); font: 400 15px/1.5 var(--text); padding-block: 0 48px; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
-  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
-  h1 { font-size: 20px; margin: 0; letter-spacing: .5px; }
-  h1 span { color: var(--accent); }
-  header p { margin: 0; color: var(--dim); font-size: 13px; }
+.head {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding-block: 32px 20px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.title { display: flex; gap: 18px; align-items: flex-start; }
+.mark { width: 42px; height: 42px; flex: none; image-rendering: pixelated; margin-top: 4px; }
+h1 { margin: 0; font: 400 54px/66px var(--display); }
+.sub { margin: 4px 0 0; font: 500 17px/1.4 var(--text); color: var(--quiet); }
+.links { display: flex; gap: 20px; font: 500 13px/1 var(--mono); letter-spacing: 0.04em; }
+.links a { text-decoration: none; color: var(--quiet); padding: 6px 0; border-bottom: 1px solid var(--line); }
+.links a:hover { color: var(--ink); border-color: var(--ink); }
 
-  .stage {
-    position: relative;
-    display: grid;
-    place-items: center;
-    padding: 24px;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    min-height: 300px;
-    overflow: hidden;
-  }
-  .stage canvas { display: block; image-rendering: pixelated; }
-  .badge {
-    position: absolute; top: 10px; left: 12px;
-    font: 12px/1 ui-monospace, Consolas, monospace;
-    color: var(--dim);
-  }
+main { max-width: 1240px; margin: 0 auto; padding-top: 8px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.card { display: block; border: 1px solid var(--line); padding: 22px 24px; text-decoration: none; }
+.card:hover { border-color: var(--ink); }
+.card b { display: block; font: 400 24px/28px var(--display); }
+.card small { display: block; margin-top: 6px; font: 400 12px/1.5 var(--mono); color: var(--quiet); letter-spacing: 0.04em; }
+.card small::after { content: "\2192"; margin-left: 10px; color: var(--patch); }
+.note { margin: 20px 0 0; font: 400 12px/1.6 var(--mono); color: var(--quiet); }
+.note code { color: var(--ink); }
 
-  .bars { display: grid; gap: 10px; margin-top: 14px; }
-  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .row > label { width: 62px; color: var(--dim); font-size: 13px; flex: none; }
-
-  button, select, input[type="search"] {
-    font: inherit;
-    color: var(--text);
-    background: var(--panel-2);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 6px 11px;
-    cursor: pointer;
-  }
-  button:hover, select:hover { border-color: #44445f; }
-  button.on { border-color: var(--accent); color: #fff; }
-  input[type="search"] { cursor: text; min-width: 180px; }
-
-  input[type="range"] { flex: 1; min-width: 160px; accent-color: var(--accent); cursor: pointer; }
-  .time { font: 12px ui-monospace, Consolas, monospace; color: var(--dim); width: 92px; text-align: right; }
-
-  .list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 6px;
-    margin-top: 8px;
-    max-height: 260px;
-    overflow: auto;
-    padding-right: 4px;
-  }
-  .list button { text-align: left; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-  .note { color: var(--dim); font-size: 13px; margin: 12px 0 0; }
-  .err { color: #ff9b9b; }
-  .err code { background: #241a1a; padding: 2px 6px; border-radius: 5px; }
-  .cat { color: var(--dim); font-size: 12px; margin-right: 4px; }
+@media (max-width: 900px) {
+  h1 { font-size: 36px; line-height: 44px; }
+  .mark { width: 28px; height: 28px; }
+}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>pixelfx<span>.</span> 特效预览</h1>
-    <p>直接双击打开这个文件就能看。想换成别的效果，点下面的名字。</p>
-  </header>
-
-  <div class="stage">
-    <div class="badge" id="badge">加载中…</div>
-    <canvas id="cv"></canvas>
-  </div>
-
-  <div class="bars">
-    <div class="row">
-      <label>播放</label>
-      <button id="play">暂停</button>
-      <button id="again">重播</button>
-      <input id="seek" type="range" min="0" max="1" step="0.001" value="0" aria-label="进度">
-      <span class="time" id="time">0.00 / 0.00</span>
-    </div>
-    <div class="row">
-      <label>背景</label>
-      <span id="bgs" class="row"></span>
-      <label style="width:auto;margin-left:14px">缩放</label>
-      <button id="fit">自动</button>
-      <button id="zoom-in">放大</button>
-      <button id="zoom-out">缩小</button>
-      <button id="flip">左右翻转</button>
-      <button id="actor">角色</button>
-    </div>
-    <div class="row">
-      <label>搜索</label>
-      <input id="q" type="search" placeholder="比如 fire / slash / pikachu" autocomplete="off">
-      <span class="cat" id="count"></span>
+<header class="head">
+  <div class="title">
+    <svg class="mark" viewBox="0 0 7 7" shape-rendering="crispEdges" role="img" aria-label="Patch"><rect x="1" y="1" width="6" height="6" fill="#ffffff"/><rect x="0" y="0" width="3" height="3" fill="#f53cd1"/></svg>
+    <div>
+      <h1>pixelfx.</h1>
+      <p class="sub">像素特效与动画，每一个都是一小段代码。</p>
     </div>
   </div>
+  <nav class="links">
+    <a href="gallery/">gallery</a>
+    <a href="editor/">rig editor</a>
+  </nav>
+</header>
 
-  <div class="list" id="list"></div>
-  <p class="note" id="note"></p>
-</div>
-
-<script src="dist/pixelfx.js"></script>
-<script>
-(function () {
-  var api = window.pixelfx;
-  var note = document.getElementById("note");
-
-  if (!api) {
-    note.className = "note err";
-    note.innerHTML = "没有找到 <code>dist/pixelfx.js</code>。在项目目录里执行一次 <code>node tools/build.mjs --iife</code> 再刷新页面。";
-    document.getElementById("badge").textContent = "缺少打包文件";
-    return;
-  }
-
-  var all = api.list();
-  var canvas = document.getElementById("cv");
-  var badge = document.getElementById("badge");
-  var seek = document.getElementById("seek");
-  var timeEl = document.getElementById("time");
-  var playBtn = document.getElementById("play");
-  var listEl = document.getElementById("list");
-  var counts = document.getElementById("count");
-  var bgsEl = document.getElementById("bgs");
-
-  var current = "arcane/arcane-orb";
-  var player = null;
-  var scale = 3;
-  var autoFit = true;
-  var bg = "dark";
-  var flip = false;
-  var showActor = true;
-
-  function metaOf(id) {
-    for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i];
-    return null;
-  }
-
-  function fitScale(meta) {
-    var stage = canvas.parentElement.getBoundingClientRect();
-    var k = Math.min((stage.width - 48) / meta.size[0], (stage.height - 48) / meta.size[1]);
-    return Math.max(1, Math.floor(k));
-  }
-
-  function start(id) {
-    var meta = metaOf(id);
-    if (!meta) return;
-    current = id;
-    if (player) player.destroy();
-    if (autoFit) scale = fitScale(meta);
-    player = api.create(canvas, id, {
-      scale: scale,
-      background: bg,
-      loop: meta.loop,
-      flip: flip,
-      actor: showActor,
-      autoplay: true
-    });
-    seek.max = meta.duration;
-    seek.value = 0;
-    badge.textContent = id + "  " + meta.size[0] + "\u00d7" + meta.size[1] + "  " + meta.duration + "s";
-    sync();
-    markActive();
-    tick();
-  }
-
-  var raf = 0;
-  function tick() {
-    if (raf) cancelAnimationFrame(raf);
-    var loop = function () {
-      raf = 0;
-      if (!player) return;
-      sync();
-      if (player.playing) raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-  }
-
-  function sync() {
-    if (!player) return;
-    var d = player.duration || 1;
-    // a looping effect keeps counting past its length; the clock shows where in the loop it is
-    var at = player.loop ? player.t % d : Math.min(d, player.t);
-    if (!seekActive) seek.value = at;
-    seek.max = d;
-    timeEl.textContent = at.toFixed(2) + " / " + d.toFixed(2);
-    playBtn.textContent = player.playing ? "暂停" : "播放";
-    playBtn.classList.toggle("on", player.playing);
-  }
-
-  var seekActive = false;
-  seek.addEventListener("pointerdown", function () { seekActive = true; });
-  window.addEventListener("pointerup", function () { seekActive = false; });
-  function scrubTo(v) {
-    if (!player) return;
-    var t = Math.max(0, Math.min(player.duration || 1, v));
-    var wasPlaying = player.playing;
-    player.pause().seek(t);
-    if (wasPlaying) player.play();
-    timeEl.textContent = t.toFixed(2) + " / " + (player.duration || 1).toFixed(2);
-    playBtn.textContent = player.playing ? "暂停" : "播放";
-    playBtn.classList.toggle("on", player.playing);
-  }
-  seek.addEventListener("input", function () { scrubTo(parseFloat(seek.value)); });
-  seek.addEventListener("change", function () { scrubTo(parseFloat(seek.value)); });
-
-  // a read-only window for checking the player from outside the page
-  window.pixelfxPage = {
-    get id() { return current; },
-    get t() { return player ? player.t : -1; },
-    get playing() { return !!(player && player.playing); },
-    get duration() { return player ? player.duration : 0; }
-  };
-
-  playBtn.addEventListener("click", function () {
-    if (!player) return;
-    player.toggle();
-    sync();
-    tick();
-  });
-  document.getElementById("again").addEventListener("click", function () {
-    if (player) { player.restart(); sync(); tick(); }
-  });
-
-  ["dark", "ground", "sky", "light", "black"].forEach(function (name) {
-    var b = document.createElement("button");
-    b.textContent = name;
-    b.className = name === bg ? "on" : "";
-    b.addEventListener("click", function () {
-      bg = name;
-      Array.prototype.forEach.call(bgsEl.children, function (c) { c.classList.toggle("on", c === b); });
-      if (player) player.setOptions({ background: name });
-    });
-    bgsEl.appendChild(b);
-  });
-
-  function setScale(k) {
-    autoFit = false;
-    scale = Math.max(1, Math.min(12, k));
-    if (player) player.resize(scale);
-  }
-  document.getElementById("fit").addEventListener("click", function () {
-    var m = metaOf(current);
-    if (!m) return;
-    setScale(fitScale(m));
-    autoFit = true;
-  });
-  document.getElementById("zoom-in").addEventListener("click", function () { setScale(scale + 1); });
-  document.getElementById("zoom-out").addEventListener("click", function () { setScale(scale - 1); });
-
-  var flipBtn = document.getElementById("flip");
-  flipBtn.addEventListener("click", function () {
-    flip = !flip;
-    flipBtn.classList.toggle("on", flip);
-    if (player) player.setOptions({ flip: flip });
-  });
-
-  var actorBtn = document.getElementById("actor");
-  actorBtn.classList.add("on");
-  actorBtn.addEventListener("click", function () {
-    showActor = !showActor;
-    actorBtn.classList.toggle("on", showActor);
-    if (player) player.setOptions({ actor: showActor });
-  });
-
-  function renderList(filter) {
-    var q = (filter || "").toLowerCase();
-    listEl.innerHTML = "";
-    var shown = 0;
-    all.forEach(function (e) {
-      var hay = (e.id + " " + e.name + " " + e.tags.join(" ")).toLowerCase();
-      if (q && hay.indexOf(q) < 0) return;
-      shown++;
-      var b = document.createElement("button");
-      b.textContent = e.id;
-      b.title = e.desc;
-      b.dataset.id = e.id;
-      if (e.id === current) b.classList.add("on");
-      b.addEventListener("click", function () { start(e.id); });
-      listEl.appendChild(b);
-    });
-    counts.textContent = shown + " / " + all.length;
-    markActive();
-  }
-
-  function markActive() {
-    Array.prototype.forEach.call(listEl.children, function (b) {
-      b.classList.toggle("on", b.dataset.id === current);
-    });
-  }
-
-  document.getElementById("q").addEventListener("input", function (e) {
-    renderList(e.target.value);
-  });
-
-  window.addEventListener("resize", function () {
-    if (!autoFit || !player) return;
-    var m = metaOf(current);
-    if (!m) return;
-    var k = fitScale(m);
-    if (k !== scale) { scale = k; player.resize(k); }
-  });
-
-  note.textContent = "模板：换 id 就能看任意特效；页面只依赖 dist/pixelfx.js。";
-  renderList("");
-  start(current);
-})();
-</script>
+<main>
+  <div class="cards">
+    <a class="card" href="gallery/">
+      <b>gallery</b>
+      <small>every effect, playing live</small>
+    </a>
+    <a class="card" href="editor/">
+      <b>rig editor</b>
+      <small>drag the skeleton, export poses</small>
+    </a>
+  </div>
+  <p class="note">这两个页面需要本地服务：在项目目录执行 <code>node tools/serve.mjs</code>，再打开 <code>http://localhost:8080/</code>。</p>
+</main>
 </body>
 </html>
