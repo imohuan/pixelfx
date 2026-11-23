@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>skeleton-lab</title>
+<style>
+* { box-sizing: border-box; }
+:root {
+  --ground: #000;
+  --stage: #15131d;
+  --ink: #fff;
+  --quiet: #999;
+  --line: #333;
+  --patch: #f53cd1;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { margin: 0; min-height: 100vh; background: var(--ground); color: var(--ink); font: 400 15px/1.5 system-ui, sans-serif; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.head { max-width: 1240px; margin: 0 auto; padding: 32px 24px 20px; }
+h1 { margin: 0; font: 400 36px/44px var(--mono); letter-spacing: -0.5px; }
+.sub { margin: 4px 0 0; color: var(--quiet); font-size: 15px; }
+.lab { max-width: 1240px; margin: 0 auto; padding: 8px 24px 64px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 28px; align-items: start; }
+.stagewrap { background: var(--stage); border: 1px solid var(--stage); }
+.stagewrap canvas { width: 100%; display: block; image-rendering: pixelated; touch-action: none; }
+.stagebar { display: flex; gap: 12px; align-items: center; padding-top: 10px; font: 400 12px/1 var(--mono); color: var(--quiet); }
+#warn { color: var(--patch); margin-left: auto; }
+.info { display: flex; flex-direction: column; gap: 10px; }
+.code-head { margin-top: 10px; font: 400 11px/1 var(--mono); color: var(--quiet); letter-spacing: 0.04em; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.btn { border: 1px solid var(--line); background: none; padding: 6px 9px; font: 500 12px/1 var(--mono); cursor: pointer; }
+.btn:hover { border-color: var(--quiet); }
+.btn.on { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.check { display: flex; gap: 8px; align-items: center; font: 400 12px/1 var(--mono); color: var(--quiet); }
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; font: 400 12px/1.5 var(--mono); margin: 0; }
+.facts dt { color: var(--quiet); }
+.facts dd { margin: 0; font-variant-numeric: tabular-nums; }
+pre { margin: 0; background: #111; border: 1px solid var(--line); padding: 12px; font: 400 12px/1.5 var(--mono); overflow-x: auto; white-space: pre; }
+@media (max-width: 900px) { .lab { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<div class="head">
+  <h1>skeleton-lab</h1>
+  <p class="sub">独立搬出来的骨骼核心。拖粉色手柄，右侧姿势代码实时更新。</p>
+</div>
+<main class="lab">
+  <div>
+    <div class="stagewrap"><canvas id="stage" width="620" height="520"></canvas></div>
+    <div class="stagebar">
+      <span>drag: hands · feet · pelvis</span>
+      <span id="warn"></span>
+    </div>
+  </div>
+  <aside class="info">
+    <div class="code-head">presets</div>
+    <div class="row" id="presets"></div>
+    <div class="code-head">view</div>
+    <div class="row">
+      <label class="check"><input type="checkbox" id="skel" checked> skeleton</label>
+      <label class="check"><input type="checkbox" id="breath"> breathe</label>
+    </div>
+    <div class="code-head">joints</div>
+    <dl class="facts" id="facts"></dl>
+    <div class="code-head">export</div>
+    <pre id="out"></pre>
+  </aside>
+</main>
+<script type="module">
+import { posed, skeleton, shortfall, STAND } from "./core/rig.js";
+
+const canvas = document.getElementById("stage");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height, ZOOM = 9, OX = 220, OY = 470;
+
+let pose = { ...STAND, crouch: 3 };
+let drag = null, dragFrom = null;
+let breathOn = false, breathT = 0, lastStamp = 0, raf = 0;
+
+const HANDLES = {
+  handN:  { kx: "fx",  ky: "fy",  lim: { x: [-40, 40], y: [-50, 2] } },
+  handF:  { kx: "bx",  ky: "by",  lim: { x: [-40, 40], y: [-50, 2] } },
+  ankleN: { kx: "ffx", ky: "ffy", lim: { x: [-18, 18], y: [-16, 2] } },
+  ankleF: { kx: "fbx", ky: "fby", lim: { x: [-18, 18], y: [-16, 2] } },
+  root:   { kx: "crouch" },
+};
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const round2 = (v) => Math.round(v * 2) / 2;
+const screen = ([x, y]) => [OX + x * ZOOM, OY + y * ZOOM];
+
+function drawBody() {
+  ctx.fillStyle = "#15131d";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#333";
+  ctx.fillRect(OX - 200, OY, 440, 1);
+  const r = posed(pose);
+  for (let i = 0; i < r.n; i++) {
+    ctx.fillStyle = "#" + (r.color[i] >>> 0).toString(16).padStart(6, "0");
+    ctx.fillRect(OX + r.xs[i] * ZOOM, OY + r.ys[i] * ZOOM, ZOOM, ZOOM);
+  }
+}
+
+function drawSkeleton() {
+  const sk = skeleton(pose);
+  ctx.strokeStyle = "rgba(245,60,209,.85)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (const [a, b] of sk.bones) {
+    const [ax, ay] = screen(sk.joints[a]), [bx, by] = screen(sk.joints[b]);
+    ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+  }
+  ctx.stroke();
+  const warn = shortfall(pose) > 0.75;
+  document.getElementById("warn").textContent = warn ? "hand out of reach" : "";
+  for (const h of Object.keys(HANDLES)) {
+    const j = h === "root" ? sk.joints.pelvis : sk.joints[h];
+    if (!j) continue;
+    const [x, y] = screen(j);
+    ctx.fillStyle = (warn && h.startsWith("hand")) ? "#ff5555" : drag === h ? "#ffffff" : "#f53cd1";
+    ctx.fillRect(x - 4, y - 4, 9, 9);
+    ctx.fillStyle = drag === h ? "#f53cd1" : "#000";
+    ctx.fillRect(x - 1, y - 1, 3, 3);
+  }
+}
+
+function draw() {
+  drawBody();
+  if (document.getElementById("skel").checked) drawSkeleton();
+  updateInfo();
+}
+
+function artPos(e) {
+  const r = canvas.getBoundingClientRect();
+  return [((e.clientX - r.left) * (W / r.width) - OX) / ZOOM, ((e.clientY - r.top) * (H / r.height) - OY) / ZOOM];
+}
+
+function handleAt(ax, ay) {
+  const sk = skeleton(pose);
+  let best = null, bd = 1.8;
+  for (const h of Object.keys(HANDLES)) {
+    const j = h === "root" ? sk.joints.pelvis : sk.joints[h];
+    if (!j) continue;
+    const d = Math.hypot(ax - j[0], ay - j[1]) - (h === "root" ? 0.5 : 0);
+    if (d < bd) { bd = d; best = h; }
+  }
+  return best;
+}
+
+function moveHandle(ax, ay) {
+  const H = HANDLES[drag];
+  if (drag === "root") {
+    if (dragFrom) pose.crouch = clamp(round2(pose.crouch - (ay - dragFrom[1])), 0, 10);
+    dragFrom = [ax, ay];
+    draw(); return;
+  }
+  // 吸附式拖动：把光标限制在可达范围内，迭代微调姿势字段直到关节贴上
+  const sk0 = skeleton(pose);
+  const anchor = drag.startsWith("hand") ? sk0.joints[drag === "handN" ? "shoulderN" : "shoulderF"]
+                                         : sk0.joints[drag === "ankleN" ? "hipN" : "hipF"];
+  const reach = drag.startsWith("hand") ? 14.2 : 16.4;
+  let dx = ax - anchor[0], dy = ay - anchor[1], d = Math.hypot(dx, dy);
+  let tx = ax, ty = ay;
+  if (d > reach) { tx = anchor[0] + dx * reach / d; ty = anchor[1] + dy * reach / d; }
+  let last = Infinity;
+  for (let i = 0; i < 12; i++) {
+    const [jx, jy] = skeleton(pose).joints[drag];
+    const err = Math.hypot(tx - jx, ty - jy);
+    if (err < 0.15 || err >= last) break;
+    last = err;
+    const nx = clamp(round2(pose[H.kx] + (tx - jx)), ...H.lim.x);
+    const ny = clamp(round2(pose[H.ky] + (ty - jy)), ...H.lim.y);
+    if (nx === pose[H.kx] && ny === pose[H.ky]) break;
+    pose[H.kx] = nx; pose[H.ky] = ny;
+  }
+  draw();
+}
+
+canvas.addEventListener("pointerdown", (e) => {
+  const [ax, ay] = artPos(e);
+  const h = handleAt(ax, ay);
+  if (h) { drag = h; dragFrom = [ax, ay]; canvas.setPointerCapture(e.pointerId); draw(); }
+});
+canvas.addEventListener("pointermove", (e) => {
+  const [ax, ay] = artPos(e);
+  if (drag) moveHandle(ax, ay);
+  else canvas.style.cursor = handleAt(ax, ay) ? "grab" : "default";
+});
+canvas.addEventListener("pointerup", () => { drag = null; dragFrom = null; canvas.style.cursor = "grab"; draw(); });
+
+const PRESETS = {
+  "stand": { ...STAND, crouch: 3 },
+  "swing": { crouch: 4, lean: 5, fx: 24, fy: -19, bx: -10, by: -22 },
+  "kick":  { crouch: 2, lean: -3, ffx: 16, ffy: -10, fbx: -6, fby: -2, fx: -8, fy: -18 },
+  "jump":  { y: -14, fx: -4, fy: -26, bx: 7, by: -24, ffx: 5, ffy: -8, fbx: -5, fby: -3 },
+};
+for (const [name, p] of Object.entries(PRESETS)) {
+  const b = document.createElement("button");
+  b.className = "btn";
+  b.textContent = name;
+  b.addEventListener("click", () => {
+    pose = { ...p };
+    document.querySelectorAll("#presets .btn").forEach((o) => o.classList.remove("on"));
+    b.classList.add("on");
+    draw();
+  });
+  document.getElementById("presets").append(b);
+}
+document.getElementById("skel").addEventListener("change", draw);
+
+function updateInfo() {
+  const d = (v) => +(+v).toFixed(1);
+  const entries = Object.entries(pose).filter(([, v]) => typeof v === "number" && Math.abs(v) > 0.01)
+    .map(([k, v]) => "  " + k + ": " + +v.toFixed(2) + ",");
+  document.getElementById("out").textContent = "const pose = {" + String.fromCharCode(10) + entries.join(String.fromCharCode(10)) + String.fromCharCode(10) + "};";
+  const sk = skeleton(pose);
+  document.getElementById("facts").innerHTML = [
+    ["pelvis height", d(sk.joints.pelvis[1]) + " px"],
+    ["chest", d(sk.joints.chest[0]) + ", " + d(sk.joints.chest[1])],
+    ["near hand", d(sk.joints.handN[0]) + ", " + d(sk.joints.handN[1])],
+    ["far hand", d(sk.joints.handF[0]) + ", " + d(sk.joints.handF[1])],
+    ["out of reach", shortfall(pose) > 0.75 ? "yes" : "no"],
+    ["body pixels", posed(pose).n],
+  ].map(([k, v]) => "<dt>" + k + "</dt><dd>" + v + "</dd>").join("");
+}
+
+// 呼吸演示：身体轻微起伏，看关节怎么跟着动
+function tick(stamp) {
+  raf = 0;
+  if (!breathOn) return;
+  const dt = Math.min(0.1, (stamp - lastStamp) / 1000);
+  lastStamp = stamp;
+  breathT += dt;
+  pose = { ...pose, crouch: 3 + Math.sin(breathT * 2.5) * 1.5, fy: STAND.fy + Math.sin(breathT * 2.5) * 1.5, by: STAND.by + Math.sin(breathT * 2.5) * 1.5 };
+  draw();
+  raf = requestAnimationFrame(tick);
+}
+document.getElementById("breath").addEventListener("change", (e) => {
+  breathOn = e.target.checked;
+  lastStamp = performance.now();
+  if (breathOn && !raf) raf = requestAnimationFrame(tick);
+});
+
+draw();
+</script>
+</body>
+</html>
