@@ -208,7 +208,7 @@ export function actSpan(mod) {
 export function createAct(mod, o = {}) {
   const a = mod.act ?? {}, meta = mod.meta ?? {}, D = meta.duration ?? 1, flip = !!o.flip, seed = o.seed ?? meta.options?.seed ?? 1;
   const fx = createFx(mod, o), track = a.poses ?? [[0, { ...STAND }]], span = actSpan(mod);
-  const X = o.x ?? 0, Y = o.y ?? 0;
+  let X = o.x ?? 0, Y = o.y ?? 0;
   const targets = (a.targets ?? (a.target ? [a.target] : [])).map((g, i) => new Target(g.x ?? 66, seed + 4 + i));
   const hits = (a.hits ?? []).map((h) => ({ ...h })).sort((p, q) => p.t - q.t), dust = (a.dust ?? []).slice();
   const R = new Rng(seed + 9), specks = [];
@@ -244,6 +244,20 @@ export function createAct(mod, o = {}) {
     get frozen() { return stop > 0; },
     /** The pose he's in right now. */
     get pose() { return last; },
+    get x() { return X; },
+    get y() { return Y; },
+    /** 摄像机跟随：预览面板里把人物重新摆回画面中心 */
+    rebase(nx, ny) {
+      // 人物在世界里的位置 = 实例位置(X,Y) + 姿势偏移(pose.x, pose.y)。跟随按"人物实际位置"平移
+      const px0 = last ? (last.x ?? 0) : 0, py0 = last ? (last.y ?? 0) : 0;
+      const dx = nx - (X + px0), dy = ny - (Y + py0);
+      X = nx; Y = ny;
+      if (last) { last.x = 0; last.y = 0; }
+      fx.options.x = nx; fx.options.y = ny;
+      for (const g of ghosts) { g.q.x = (g.q.x ?? 0) + dx; g.q.y = (g.q.y ?? 0) + dy; }
+      for (const k of specks) { k.x += dx; }
+      for (const g of targets) { g.x += dx; }
+    },
     update(dt) {
       if (shakeT > 0) shakeT -= dt;
       if (stop > 0) {
@@ -300,7 +314,7 @@ export function createAct(mod, o = {}) {
       while (ghosts.length && ghosts[0].age > GHOST_LIFE) ghosts.shift();
     },
     /** Paint it. { body: false } leaves the character out, { target: false } the target. */
-    draw(frame, { body = true, target: showTarget = true } = {}) {
+    draw(frame, { body = true, target: showTarget = true, fx = true } = {}) {
       const W = frame.w, H = frame.h, q = last ?? poseNow(), active = t >= 0;
       const tgt = showTarget ? targets : [];
       const drawTargets = () => tgt.forEach((g) => g.draw(frame.color, W, H, FX, FY, flip));
@@ -316,9 +330,9 @@ export function createAct(mod, o = {}) {
       };
       const FX = X - (frame.ox | 0), FY = Y - (frame.oy | 0);
       if (!body) {
-        if (active) fx.draw(frame, "back");
+        if (active && fx) fx.draw(frame, "back");
         drawTargets();
-        if (active) fx.draw(frame, "front");
+        if (active && fx) fx.draw(frame, "front");
         drawStraw();
         return;
       }
@@ -356,12 +370,12 @@ export function createAct(mod, o = {}) {
       };
       if (!a.onBody) {
         // the effect doesn't care about the body: back, body, front
-        if (active) fx.draw(frame, "back");
+        if (active && fx) fx.draw(frame, "back");
         drawTargets();
         shadow();
         drawGhosts();
         for (let i = 0; i < r.n; i++) paint(i, r.color[i]);
-        if (active) fx.draw(frame, "front");
+        if (active && fx) fx.draw(frame, "front");
         drawStraw();
         drawDust();
         return;
@@ -370,12 +384,12 @@ export function createAct(mod, o = {}) {
       const { a: A, b: B } = scratchFor(frame);
       clearFrame(A);
       clearFrame(B);
-      if (active) fx.draw(A, "back");
+      if (active && fx) fx.draw(A, "back");
       B.color.set(A.color);
       B.light.set(A.light);
       const tt = meta.loop ? (t < 0 ? 0 : t % D) : clamp(t, 0, D), alpha = active ? actorAlphaOf(mod, tt, fx.options) : 1;
       drawActor(painterFor(B).place(FX, FY, flip), fx.options.actor ?? stockActor(2), alpha);
-      if (active) fx.draw(B, "front");
+      if (active && fx) fx.draw(B, "front");
       const follow = a.follow ?? 1, lean = (q.lean ?? 0) * follow, cr = (q.crouch ?? 0) * follow;
       // what's up on the body goes with it; what's on the floor stays on the floor
       const shiftOf = (ly) => {
