@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>数字输入框 · 演示</title>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@fontsource/geist@5.2.9/400.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@fontsource/geist@5.2.9/600.css" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #000000;
+      --on-primary: #ffffff;
+      --on-surface: #1b1b1d;
+      --on-surface-variant: #47464a;
+      --outline: #797379;
+      --outline-variant: #c8c5ca;
+      --surface: #ffffff;
+      --surface-low: #f3f3f4;
+      --surface-high: #ececed;
+      --ok: #1a7f37;
+      --error: #b3261e;
+      --radius-ctl: 4px;
+      --radius-card: 8px;
+      --font: 'Geist', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color-scheme: light;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--surface-low);
+      color: var(--on-surface);
+      font: 400 12px/1.6 var(--font);
+      -webkit-font-smoothing: antialiased;
+    }
+    header {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--outline-variant);
+    }
+    header .brand { display: flex; align-items: center; gap: 10px; }
+    header .brand .material-symbols-outlined { font-size: 18px; color: var(--primary); }
+    header h1 { margin: 0; font-size: 14px; font-weight: 600; color: var(--primary); }
+    header .hint { font-size: 11px; color: var(--on-surface-variant); }
+    main { flex: 1; overflow-y: auto; min-height: 0; }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 24px 20px 48px; display: grid; gap: 16px; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--outline-variant);
+      border-radius: var(--radius-card);
+      overflow: hidden;
+    }
+    .card-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--outline-variant);
+    }
+    .card-head .material-symbols-outlined { font-size: 18px; color: var(--on-surface); }
+    .card-head h2 { margin: 0; font-size: 13px; font-weight: 600; color: var(--primary); }
+    .card-body { padding: 16px; display: grid; gap: 14px; }
+    .form-row { display: grid; gap: 14px; }
+    @media (min-width: 640px) { .form-row { grid-template-columns: 1fr 1fr; } }
+    .ctl { display: grid; gap: 6px; min-width: 0; }
+    .ctl > .ctl-label { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--on-surface-variant); }
+    .ctl > .ctl-label .material-symbols-outlined { font-size: 14px; }
+    .ctl > .ctl-label .req { color: var(--error); }
+    .ctl > .ctl-label .chip {
+      margin-left: auto;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: var(--surface-high);
+      color: var(--on-surface-variant);
+      font: 500 10px/1.5 var(--mono);
+    }
+    .ctl-desc { font-size: 10px; color: var(--outline); }
+    .tips { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .tips li { display: flex; gap: 8px; align-items: flex-start; font-size: 11px; color: var(--on-surface-variant); }
+    .tips .material-symbols-outlined { flex: none; font-size: 14px; color: var(--primary); margin-top: 1px; }
+    .tips kbd {
+      padding: 0 5px;
+      border: 1px solid var(--outline-variant);
+      border-bottom-width: 2px;
+      border-radius: 3px;
+      background: var(--surface-low);
+      font: 500 10px/1.7 var(--mono);
+      color: var(--on-surface);
+    }
+    .save-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-top: 4px;
+      border-top: 1px dashed var(--outline-variant);
+    }
+    .save-state { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--on-surface-variant); }
+    .save-state .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--outline-variant); transition: background-color .18s ease; }
+    .save-state.is-saved .dot { background: var(--ok); }
+    .save-state.is-saved { color: var(--ok); }
+    .btn {
+      appearance: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 24px;
+      padding: 0 12px;
+      border: 1px solid var(--primary);
+      border-radius: var(--radius-ctl);
+      background: var(--primary);
+      color: var(--on-primary);
+      font: 500 12px/1 var(--font);
+      cursor: pointer;
+      transition: opacity .15s ease;
+    }
+    .btn:hover { opacity: .88; }
+    .btn:active { opacity: .75; }
+    .btn .material-symbols-outlined { font-size: 14px; }
+    .btn--ghost {
+      background: transparent;
+      color: var(--primary);
+    }
+    .btn--ghost:hover { background: var(--surface-low); opacity: 1; }
+    .toast-host {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      z-index: 50;
+      display: grid;
+      gap: 8px;
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+    .toast {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: var(--primary);
+      color: var(--on-primary);
+      font: 500 11px/1 var(--font);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+      opacity: 0;
+      transform: translateY(-8px);
+      transition: opacity .18s ease, transform .18s ease;
+    }
+    .toast.is-on { opacity: 1; transform: translateY(0); }
+    .toast .material-symbols-outlined { font-size: 14px; }
+    footer { padding: 16px; text-align: center; font-size: 10px; color: var(--outline); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="material-symbols-outlined">tune</span>
+      <h1>播放器设置</h1>
+    </div>
+    <span class="hint">kit-number-field 组件演示 · 主题：黑白极简 M3</span>
+  </header>
+  <main>
+    <div class="wrap">
+      <section class="card">
+        <div class="card-head">
+          <span class="material-symbols-outlined">graphic_eq</span>
+          <h2>播放</h2>
+        </div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="ctl">
+              <div class="ctl-label"><span class="material-symbols-outlined">speed</span>音量<span class="req">*</span><span class="chip" id="chip-volume">80 %</span></div>
+              <kit-number-field id="f-volume" min="0" max="100" step="1" unit="%"></kit-number-field>
+              <span class="ctl-desc">滑块与输入框联动；按 <kbd>Shift</kbd> 加速，<kbd>Ctrl</kbd> 精调。</span>
+            </div>
+            <div class="ctl">
+              <div class="ctl-label"><span class="material-symbols-outlined">pace</span>播放速度<span class="chip" id="chip-rate">1.0 x</span></div>
+              <kit-number-field id="f-rate" min="0.25" max="4" step="0.05" precision="2" unit="x"></kit-number-field>
+              <span class="ctl-desc">小数步长会按 step 对齐到刻度上。</span>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="ctl">
+              <div class="ctl-label"><span class="material-symbols-outlined">hearing</span>人声响度<span class="chip" id="chip-voice">-12 dB</span></div>
+              <kit-number-field id="f-voice" min="-60" max="0" step="1" unit="dB"></kit-number-field>
+              <span class="ctl-desc">支持负数区间；最左锁按钮可进入无限拖动。</span>
+            </div>
+            <div class="ctl">
+              <div class="ctl-label"><span class="material-symbols-outlined">blur_on</span>环境混响<span class="chip" id="chip-reverb">30 %</span></div>
+              <kit-number-field id="f-reverb" min="0" max="100" step="5" unit="%"></kit-number-field>
+              <span class="ctl-desc">步长 5，拖动会吸附到 5 的倍数。</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <span class="material-symbols-outlined">stroke_full</span>
+          <h2>画笔</h2>
+        </div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="ctl">
+              <div class="ctl-label"><span class="material-symbols-outlined">line_weight</span>笔刷大小<span class="chip" id="chip-size">6 px</span></div>
+              <kit-number-field id="f-size" min="1" max="64" step="1" unit="px" size="lg"></kit-number-field>
+              <span class="ctl-desc">size="lg"，控件高 28px。</span>
+            </div>
+            <div class="ctl">
+              <div class="ctl-label"><span class="material-symbols-outlined">opacity</span>不透明度<span class="chip" id="chip-alpha">100 %</span></div>
+              <kit-number-field id="f-alpha" min="0" max="100" step="1" unit="%"></kit-number-field>
+              <span class="ctl-desc">锁按钮在触屏上自动隐藏，避免误触。</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <span class="material-symbols-outlined">lightbulb</span>
+          <h2>使用提示</h2>
+        </div>
+        <div class="card-body">
+          <ul class="tips">
+            <li><span class="material-symbols-outlined">lock</span><span>点最左侧的锁按钮进入鼠标锁定：鼠标无限左右移动，数值持续变化；再点一次或按 <kbd>Esc</kbd> 退出。锁定时屏幕顶部会显示当前值。</span></li>
+            <li><span class="material-symbols-outlined">keyboard</span><span>拖动滑块或锁定拖动时按住 <kbd>Shift</kbd> 速度 ×4，按住 <kbd>Ctrl</kbd>（Mac 为 <kbd>⌘</kbd>）速度 ×0.25；键盘 <kbd>←</kbd><kbd>→</kbd> 步进，<kbd>Shift</kbd> +方向键 ×10，<kbd>Ctrl</kbd> +方向键走十分之一步。</span></li>
+            <li><span class="material-symbols-outlined">save</span><span>所有数值自动保存到 localStorage，刷新页面后恢复；点"恢复默认"可一键还原。</span></li>
+          </ul>
+          <div class="save-bar">
+            <span class="save-state" id="save-state"><span class="dot"></span><span id="save-text">尚未保存</span></span>
+            <button class="btn btn--ghost" id="btn-reset" type="button">
+              <span class="material-symbols-outlined">restart_alt</span>恢复默认
+            </button>
+          </div>
+        </div>
+      </section>
+      <footer>kit-number-field · 无第三方依赖的原生 Web Component</footer>
+    </div>
+  </main>
+  <div class="toast-host" id="toast-host" aria-live="polite"></div>
+
+  <script type="module" src="./number-field.js"></script>
+  <script type="module">
+    const STORE_KEY = "pixelfx.number-field.demo.v1";
+    const DEFAULTS = { "f-volume": 80, "f-rate": 1, "f-voice": -12, "f-reverb": 30, "f-size": 6, "f-alpha": 100 };
+
+    const $ = (id) => document.getElementById(id);
+    const controls = Object.keys(DEFAULTS).map((id) => ({ id, el: $(id), chip: $("chip-" + id.slice(2)) }));
+    const saveState = $("save-state");
+    const saveText = $("save-text");
+
+    function load() {
+      try {
+        return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(STORE_KEY) || "{}") };
+      } catch {
+        return { ...DEFAULTS };
+      }
+    }
+
+    function persist(values) {
+      localStorage.setItem(STORE_KEY, JSON.stringify(values));
+      saveState.classList.add("is-saved");
+      saveText.textContent = "已保存到 localStorage";
+      clearTimeout(persist._t);
+      persist._t = setTimeout(() => saveState.classList.remove("is-saved"), 1400);
+    }
+
+    function chipText(el, unit) {
+      const value = el.value;
+      const places = Number(el.getAttribute("precision") || 0);
+      return value.toFixed(places) + (unit || "");
+    }
+
+    let values = load();
+    let saveTimer = 0;
+
+    function scheduleSave() {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => persist(values), 400);
+    }
+
+    for (const { id, el, chip } of controls) {
+      el.value = values[id];
+      chip.textContent = chipText(el, el.getAttribute("unit"));
+      el.addEventListener("input", () => {
+        values[id] = el.value;
+        chip.textContent = chipText(el, el.getAttribute("unit"));
+        scheduleSave();
+      });
+    }
+
+    $("btn-reset").addEventListener("click", () => {
+      values = { ...DEFAULTS };
+      for (const { id, el, chip } of controls) {
+        el.value = values[id];
+        chip.textContent = chipText(el, el.getAttribute("unit"));
+      }
+      persist(values);
+      toast("已恢复默认设置", "restart_alt");
+    });
+
+    function toast(message, icon) {
+      const host = $("toast-host");
+      const item = document.createElement("div");
+      item.className = "toast";
+      item.innerHTML = '<span class="material-symbols-outlined">' + (icon || "check_circle") + "</span>" + message;
+      host.append(item);
+      requestAnimationFrame(() => item.classList.add("is-on"));
+      setTimeout(() => {
+        item.classList.remove("is-on");
+        setTimeout(() => item.remove(), 220);
+      }, 2000);
+    }
+  </script>
+</body>
+</html>
