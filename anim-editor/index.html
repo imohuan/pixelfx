@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ANIM-FX 动作编排</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><rect width=%2216%22 height=%2216%22 fill=%22%23fff%22/><rect x=%224%22 y=%224%22 width=%228%22 height=%228%22 fill=%22%23000%22/></svg>">
+<!-- 全部本地化：离线也能打开，CDN 抽风不会白屏 -->
+<!-- 一期重构：模板拆到 src/components/*，这里只留壳 -->
+<link rel="stylesheet" href="vendor/fonts.css">
+<link rel="stylesheet" href="vendor/kit.css">
+<link rel="stylesheet" href="style.css">
+<style>[v-cloak]{display:none}</style>
+</head>
+<body class="bg-surface-container-low">
+<div id="app" v-cloak></div>
+
+<script src="vendor/vue.global.prod.js"></script>
+<script src="vendor/kit.js"></script>
+<script src="vendor/vue-draggable-plus.iife.js"></script>
+<script src="vendor/masonry.pkgd.min.js"></script>
+<script type="module">
+  import("./app.js").then(function (m) { m.mount(); }).catch(function (e) {
+    console.error(e);
+    document.getElementById("app").innerHTML = '<pre style="color:#f66;padding:16px">' + (e.stack || e.message) + '</pre>';
+  });
+</script>
+</body>
+</html>
