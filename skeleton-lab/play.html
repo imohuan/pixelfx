@@ -16,89 +16,141 @@
   --mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
   color-scheme: dark;
 }
-html, body { margin: 0; min-height: 100vh; background: var(--ground); color: var(--ink); font: 400 15px/1.5 system-ui, sans-serif; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--ground); color: var(--ink); font: 400 14px/1.5 system-ui, sans-serif; }
 button, input { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-.head { max-width: 1240px; margin: 0 auto; padding: 32px 24px 20px; }
-h1 { margin: 0; font: 400 36px/44px var(--mono); letter-spacing: -0.5px; }
-.sub { margin: 4px 0 0; color: var(--quiet); font-size: 15px; }
-.lab { max-width: 1240px; margin: 0 auto; padding: 8px 24px 64px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 28px; align-items: start; }
-.stagewrap { background: var(--stage); border: 1px solid var(--stage); }
-.stagewrap canvas { width: 100%; display: block; image-rendering: pixelated; touch-action: none; }
-.stagebar { display: flex; gap: 12px; align-items: center; padding-top: 10px; font: 400 12px/1 var(--mono); color: var(--quiet); }
+
+.app { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.head { display: flex; align-items: baseline; gap: 14px; padding: 14px 24px 10px; }
+h1 { margin: 0; font: 400 24px/1.2 var(--mono); letter-spacing: -0.5px; }
+.sub { color: var(--quiet); font-size: 13px; }
+
+.lab { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; padding: 0 24px 20px; min-height: 0; }
+.stagewrap { background: var(--stage); border: 1px solid var(--stage); display: flex; flex-direction: column; min-height: 0; }
+/* 画布始终缩放到正好装满容器（等比），不产生滚动条 */
+.stagebox { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.stagebox canvas { display: block; image-rendering: pixelated; touch-action: none; flex: none; }
+.stagebar { display: flex; gap: 12px; align-items: center; padding: 8px 12px; font: 400 12px/1 var(--mono); color: var(--quiet); border-top: 1px solid #2a2b33; }
 #warn { color: var(--patch); margin-left: auto; }
-.info { display: flex; flex-direction: column; gap: 10px; }
-.code-head { margin-top: 10px; font: 400 11px/1 var(--mono); color: var(--quiet); letter-spacing: 0.04em; }
-.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.btn { border: 1px solid var(--line); background: none; padding: 6px 9px; font: 500 12px/1 var(--mono); cursor: pointer; }
+
+.info { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+.code-head { margin-top: 12px; font: 400 11px/1 var(--mono); color: var(--quiet); letter-spacing: 0.08em; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.btn { border: 1px solid var(--line); background: none; padding: 6px 10px; font: 500 12px/1 var(--mono); cursor: pointer; }
 .btn:hover { border-color: var(--quiet); }
 .btn.on { background: var(--ink); color: var(--ground); border-color: var(--ink); }
 .check { display: flex; gap: 8px; align-items: center; font: 400 12px/1 var(--mono); color: var(--quiet); }
-.facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; font: 400 12px/1.5 var(--mono); margin: 0; }
+
+.slider { display: grid; grid-template-columns: 74px minmax(0, 1fr) 44px; gap: 8px; align-items: center; margin-top: 6px; font: 400 12px/1 var(--mono); }
+.slider label { color: var(--quiet); }
+.slider .val { text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--patch); }
+
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; font: 400 12px/1.5 var(--mono); margin: 6px 0 0; }
 .facts dt { color: var(--quiet); }
 .facts dd { margin: 0; font-variant-numeric: tabular-nums; }
-pre { margin: 0; background: #111; border: 1px solid var(--line); padding: 12px; font: 400 12px/1.5 var(--mono); overflow-x: auto; white-space: pre; }
-@media (max-width: 900px) { .lab { grid-template-columns: minmax(0, 1fr); } }
+pre { margin: 6px 0 12px; background: #111; border: 1px solid var(--line); padding: 10px; font: 400 11px/1.5 var(--mono); overflow-x: auto; white-space: pre; }
+@media (max-width: 900px) { .lab { grid-template-columns: minmax(0, 1fr); } .info { max-height: 40vh; } }
 </style>
 </head>
 <body>
-<div class="head">
-  <h1>skeleton-lab</h1>
-  <p class="sub">独立搬出来的骨骼核心。拖粉色手柄，右侧姿势代码实时更新。</p>
-</div>
-<main class="lab">
-  <div>
-    <div class="stagewrap"><canvas id="stage" width="620" height="520"></canvas></div>
-    <div class="stagebar">
-      <span>drag: hands · feet · pelvis</span>
-      <span id="warn"></span>
-    </div>
+<div class="app">
+  <div class="head">
+    <h1>skeleton-lab</h1>
+    <span class="sub">独立骨骼核心研究台。精度 = 骨骼放大倍数（1 = 原始 38px）；左侧画布 1:1 显示，不缩放。</span>
   </div>
-  <aside class="info">
-    <div class="code-head">presets</div>
-    <div class="row" id="presets"></div>
-    <div class="code-head">view</div>
-    <div class="row">
-      <label class="check"><input type="checkbox" id="skel" checked> skeleton</label>
-      <label class="check"><input type="checkbox" id="breath"> breathe</label>
+  <main class="lab">
+    <div class="stagewrap">
+      <div class="stagebox"><canvas id="stage" width="640" height="560"></canvas></div>
+      <div class="stagebar">
+        <span>拖动：手 · 脚 · 骨盆（root）</span>
+        <span id="warn"></span>
+      </div>
     </div>
-    <div class="code-head">joints</div>
-    <dl class="facts" id="facts"></dl>
-    <div class="code-head">export</div>
-    <pre id="out"></pre>
-  </aside>
-</main>
+    <aside class="info">
+      <div class="code-head">角色</div>
+      <div class="row" id="skins"></div>
+      <div class="code-head">像素精度（骨骼倍数）</div>
+      <div class="slider"><label>精度</label><input type="range" id="px-acc" min="1" max="12" step="1" value="5"><span class="val" id="px-acc-v">5x</span></div>
+      <div class="code-head">显示缩放</div>
+      <div class="slider"><label>缩放</label><input type="range" id="view-zoom" min="1" max="10" step="0.5" value="1.5"><span class="val" id="view-zoom-v">1.5x</span></div>
+      <div class="code-head">预设姿势</div>
+      <div class="row" id="presets"></div>
+      <div class="code-head">视图</div>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="skel" checked> 显示骨架</label>
+        <label class="check"><input type="checkbox" id="breath"> 呼吸动画</label>
+        <label class="check"><input type="checkbox" id="hair-smooth"> 头发平滑</label>
+      </div>
+      <div class="code-head">头发形状</div>
+      <div class="slider"><label>节点数</label><input type="range" id="hair-segs" min="6" max="30" step="1" value="16"><span class="val" id="hair-segs-v">16</span></div>
+      <div class="slider"><label>分支数</label><input type="range" id="hair-str" min="2" max="10" step="1" value="4"><span class="val" id="hair-str-v">4</span></div>
+      <div class="slider"><label>每节长</label><input type="range" id="hair-len" min="4" max="20" step="1" value="11"><span class="val" id="hair-len-v">11</span></div>
+      <div class="code-head">头发物理</div>
+      <div class="slider"><label>重力</label><input type="range" id="hair-grav" min="0" max="3000" step="50" value="900"><span class="val" id="hair-grav-v">900</span></div>
+      <div class="slider"><label>扰乱</label><input type="range" id="hair-jit" min="0" max="400" step="10" value="0"><span class="val" id="hair-jit-v">0</span></div>
+      <div class="slider"><label>阻尼</label><input type="range" id="hair-damp" min="0.85" max="0.999" step="0.005" value="0.985"><span class="val" id="hair-damp-v">0.985</span></div>
+      <div class="slider"><label>硬度</label><input type="range" id="hair-stiff" min="0.1" max="1" step="0.05" value="0.5"><span class="val" id="hair-stiff-v">0.5</span></div>
+      <div class="code-head">关节坐标</div>
+      <dl class="facts" id="facts"></dl>
+      <div class="code-head">姿势导出</div>
+      <pre id="out"></pre>
+    </aside>
+  </main>
+</div>
 <script type="module">
-import { posed, skeleton, shortfall, STAND } from "./core/rig.js";
+import { posed, skeleton, shortfall, setScale, setProportions, setPalette } from "./core/rig-big.js";
+import { makeHairTuft } from "./core/hair.js";
 
 const canvas = document.getElementById("stage");
 const ctx = canvas.getContext("2d");
-const W = canvas.width, H = canvas.height, ZOOM = 9, OX = 220, OY = 470;
+let W = canvas.width, H = canvas.height;
+let ZOOM = 1.5;           // 显示缩放：一个逻辑像素画成 ZOOM 个屏幕像素
+let OX = W / 2, OY = H - 30;
+let SCALE = 5;
+let _rig;
+import("./core/rig-big.js").then((m) => { _rig = m; });
+import("./skins/standard.js").then((m) => { SKINS["标准人形"] = m.default; });
+import("./skins/orc.js").then((m) => { SKINS["兽人战士"] = m.default; });
+let SKINS = {};          // name -> { proportions, skin, presets }
+let curSkin = null;      // 当前角色名
+// STAND 的实时读取：_rig 就绪前用安全占位（启动流程会等 _rig 就绪才开始画）
+const STAND = () => _rig?.STAND ?? { lean: 0, crouch: 0, yaw: 0, fx: 0, fy: 0, bx: 0, by: 0, ffx: 0, ffy: 0, fbx: 0, fby: 0 };
 
-let pose = { ...STAND, crouch: 3 };
+// 当前姿势（随精度换算；换精度时按比例重映射坐标，姿势形状保持不变）
+let pose = null;
+
 let drag = null, dragFrom = null;
 let breathOn = false, breathT = 0, lastStamp = 0, raf = 0;
 
-const HANDLES = {
-  handN:  { kx: "fx",  ky: "fy",  lim: { x: [-40, 40], y: [-50, 2] } },
-  handF:  { kx: "bx",  ky: "by",  lim: { x: [-40, 40], y: [-50, 2] } },
-  ankleN: { kx: "ffx", ky: "ffy", lim: { x: [-18, 18], y: [-16, 2] } },
-  ankleF: { kx: "fbx", ky: "fby", lim: { x: [-18, 18], y: [-16, 2] } },
-  root:   { kx: "crouch" },
-};
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const round2 = (v) => Math.round(v * 2) / 2;
 const screen = ([x, y]) => [OX + x * ZOOM, OY + y * ZOOM];
+
+// 拖动手柄的姿势字段（限制范围跟随精度自动换算）
+const LIM = () => {
+  const k = SCALE;
+  return {
+    handN:  { kx: "fx",  ky: "fy",  lim: { x: [-40 * k, 40 * k], y: [-50 * k, 10] } },
+    handF:  { kx: "bx",  ky: "by",  lim: { x: [-40 * k, 40 * k], y: [-50 * k, 10] } },
+    ankleN: { kx: "ffx", ky: "ffy", lim: { x: [-18 * k, 18 * k], y: [-16 * k, 10] } },
+    ankleF: { kx: "fbx", ky: "fby", lim: { x: [-18 * k, 18 * k], y: [-16 * k, 10] } },
+    root:   { kx: "x", ky: "crouch" },
+  };
+};
 
 function drawBody() {
   ctx.fillStyle = "#15131d";
   ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = "#333";
-  ctx.fillRect(OX - 200, OY, 440, 1);
+  ctx.fillRect(OX - 250, OY, 500, 1);
   const r = posed(pose);
   for (let i = 0; i < r.n; i++) {
-    ctx.fillStyle = "#" + (r.color[i] >>> 0).toString(16).padStart(6, "0");
-    ctx.fillRect(OX + r.xs[i] * ZOOM, OY + r.ys[i] * ZOOM, ZOOM, ZOOM);
+    // rig 颜色是内存序 ABGR（rgb() = 255<<24 | b<<16 | g<<8 | r），要转回 #RRGGBB
+    const c = r.color[i] >>> 0;
+    const rr = c & 255, gg = (c >>> 8) & 255, bb = (c >>> 16) & 255;
+    ctx.fillStyle = "#" + ((rr << 16) | (gg << 8) | bb).toString(16).padStart(6, "0");
+    ctx.fillRect(OX + r.xs[i] * ZOOM, OY + r.ys[i] * ZOOM, Math.max(1, ZOOM), Math.max(1, ZOOM));
   }
 }
 
@@ -112,54 +164,86 @@ function drawSkeleton() {
     ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
   }
   ctx.stroke();
-  const warn = shortfall(pose) > 0.75;
-  document.getElementById("warn").textContent = warn ? "hand out of reach" : "";
-  for (const h of Object.keys(HANDLES)) {
+  const warn = shortfall(pose) > 0.75 * SCALE;
+  document.getElementById("warn").textContent = warn ? "手够不着，往回收一点" : "";
+  const lims = LIM();
+  for (const h of Object.keys(lims)) {
     const j = h === "root" ? sk.joints.pelvis : sk.joints[h];
     if (!j) continue;
     const [x, y] = screen(j);
     ctx.fillStyle = (warn && h.startsWith("hand")) ? "#ff5555" : drag === h ? "#ffffff" : "#f53cd1";
-    ctx.fillRect(x - 4, y - 4, 9, 9);
+    ctx.fillRect(x - 4, y - 4, 8, 8);
     ctx.fillStyle = drag === h ? "#f53cd1" : "#000";
-    ctx.fillRect(x - 1, y - 1, 3, 3);
+    ctx.fillRect(x - 1, y - 1, 2, 2);
   }
 }
 
+// 头发：两组物理链，锚在头顶偏后。节点数/分支数/每节长可调
+let HAIR = { gravity: 900, jitter: 0, damping: 0.985, stiffness: 0.5 };
+let hairSegs = 16, hairStrands = 4, hairSegLen = 11, hairSmooth = false;
+let hairBack = null, hairFront = null;
+function rebuildHair() {
+  const k = Math.max(1, SCALE / 5);   // 头发粗细跟精度联动
+  hairBack = makeHairTuft({ strands: hairStrands, spreadX: 5, segments: hairSegs, segLen: hairSegLen, thickness: 5 * k, seed: 7, ...HAIR });
+  hairFront = makeHairTuft({ strands: Math.max(2, hairStrands - 1), spreadX: 4, segments: Math.max(6, Math.round(hairSegs * 0.5)), segLen: Math.max(4, hairSegLen - 3), thickness: 4 * k, seed: 13, ...HAIR });
+}
+function stepHair(dt) {
+  if (!hairBack) return;
+  const crown = skeleton(pose).joints.crown;
+  const back = [crown[0] - 6, crown[1] - 4, crown[2]];
+  const front = [crown[0] + 2, crown[1] + 2, crown[2] + 3];
+  hairBack.step(dt, back);
+  hairFront.step(dt, front);
+}
+
 function draw() {
+  if (!pose) return;
+  stepHair(1 / 60);
+  hairBack.draw(ctx, ZOOM, OX, OY, "#2a2233", "#4a3f58", hairSmooth);
   drawBody();
+  hairFront.draw(ctx, ZOOM, OX, OY, "#3a2f47", "#5f5170", hairSmooth);
   if (document.getElementById("skel").checked) drawSkeleton();
   updateInfo();
 }
 
 function artPos(e) {
   const r = canvas.getBoundingClientRect();
-  return [((e.clientX - r.left) * (W / r.width) - OX) / ZOOM, ((e.clientY - r.top) * (H / r.height) - OY) / ZOOM];
+  // 显示缩放后的坐标换算（画布可能被 CSS 放大过）
+  const scaleX = W / r.width, scaleY = H / r.height;
+  return [((e.clientX - r.left) * scaleX - OX) / ZOOM, ((e.clientY - r.top) * scaleY - OY) / ZOOM];
 }
 
 function handleAt(ax, ay) {
   const sk = skeleton(pose);
-  let best = null, bd = 1.8;
-  for (const h of Object.keys(HANDLES)) {
+  let best = null, bd = 9;
+  const lims = LIM();
+  for (const h of Object.keys(lims)) {
     const j = h === "root" ? sk.joints.pelvis : sk.joints[h];
     if (!j) continue;
-    const d = Math.hypot(ax - j[0], ay - j[1]) - (h === "root" ? 0.5 : 0);
+    const d = Math.hypot(ax - j[0], ay - j[1]) - (h === "root" ? 2.5 : 0);
     if (d < bd) { bd = d; best = h; }
   }
   return best;
 }
 
 function moveHandle(ax, ay) {
-  const H = HANDLES[drag];
+  const lims = LIM();
+  const H = lims[drag];
   if (drag === "root") {
-    if (dragFrom) pose.crouch = clamp(round2(pose.crouch - (ay - dragFrom[1])), 0, 10);
+    // root：x 轴平移骨盆（重心移动），y 轴调 crouch（蹲/站）
+    // 屏幕坐标 y 向下，crouch 向下为正：鼠标往下拖 = 蹲更深
+    if (dragFrom) {
+      const dx = ax - dragFrom[0], dy = ay - dragFrom[1];
+      pose.x = clamp(round2((pose.x ?? 0) + dx), -30 * SCALE, 30 * SCALE);
+      pose.crouch = clamp(round2(pose.crouch + dy), 0, 10 * SCALE);
+    }
     dragFrom = [ax, ay];
     draw(); return;
   }
-  // 吸附式拖动：把光标限制在可达范围内，迭代微调姿势字段直到关节贴上
   const sk0 = skeleton(pose);
   const anchor = drag.startsWith("hand") ? sk0.joints[drag === "handN" ? "shoulderN" : "shoulderF"]
                                          : sk0.joints[drag === "ankleN" ? "hipN" : "hipF"];
-  const reach = drag.startsWith("hand") ? 14.2 : 16.4;
+  const reach = (drag.startsWith("hand") ? 14.2 : 16.4) * SCALE;
   let dx = ax - anchor[0], dy = ay - anchor[1], d = Math.hypot(dx, dy);
   let tx = ax, ty = ay;
   if (d > reach) { tx = anchor[0] + dx * reach / d; ty = anchor[1] + dy * reach / d; }
@@ -189,25 +273,113 @@ canvas.addEventListener("pointermove", (e) => {
 });
 canvas.addEventListener("pointerup", () => { drag = null; dragFrom = null; canvas.style.cursor = "grab"; draw(); });
 
-const PRESETS = {
-  "stand": { ...STAND, crouch: 3 },
-  "swing": { crouch: 4, lean: 5, fx: 24, fy: -19, bx: -10, by: -22 },
-  "kick":  { crouch: 2, lean: -3, ffx: 16, ffy: -10, fbx: -6, fby: -2, fx: -8, fy: -18 },
-  "jump":  { y: -14, fx: -4, fy: -26, bx: 7, by: -24, ffx: 5, ffy: -8, fbx: -5, fby: -3 },
-};
-for (const [name, p] of Object.entries(PRESETS)) {
-  const b = document.createElement("button");
-  b.className = "btn";
-  b.textContent = name;
-  b.addEventListener("click", () => {
-    pose = { ...p };
-    document.querySelectorAll("#presets .btn").forEach((o) => o.classList.remove("on"));
-    b.classList.add("on");
-    draw();
-  });
-  document.getElementById("presets").append(b);
+// ---- 角色选择：切体型 + 换肤 + 换预设
+function renderSkinButtons() {
+  const box = document.getElementById("skins");
+  box.replaceChildren();
+  for (const name of Object.keys(SKINS)) {
+    const b = document.createElement("button");
+    b.className = "btn";
+    b.textContent = name;
+    if (name === curSkin) b.classList.add("on");
+    b.addEventListener("click", () => applySkin(name));
+    box.append(b);
+  }
+}
+function applySkin(name) {
+  const cfg = SKINS[name];
+  if (!cfg) return;
+  curSkin = name;
+  setProportions(cfg.proportions);
+  setPalette(cfg.skin);
+  renderSkinButtons();
+  renderPresets();
+  // 应用该角色的第一个预设
+  const first = Object.entries(cfg.presets)[0];
+  if (first) pose = normalizePreset(first[1]);
+  draw();
+}
+
+// 预设姿势值可能是 "stand"/"swing" 这种标准姿势名，或完整姿势对象
+function normalizePreset(p) {
+  const S = STAND();
+  if (typeof p === "string") {
+    const k = SCALE;
+    const table = {
+      stand: { ...S, crouch: 3 * k },
+      swing: { crouch: 4 * k, lean: 25, fx: 20 * k, fy: -19 * k, bx: -9 * k, by: -22 * k },
+      kick:  { crouch: 2 * k, lean: -15, ffx: 16 * k, ffy: -10 * k, fbx: -6 * k, fby: -2 * k, fx: -8 * k, fy: -18 * k },
+      jump:  { y: -14 * k, fx: -4 * k, fy: -26 * k, bx: 7 * k, by: -24 * k, ffx: 5 * k, ffy: -8 * k, fbx: -5 * k, fby: -3 * k },
+    };
+    return { ...(table[p] || table.stand) };
+  }
+  return { ...p };
+}
+
+// ---- 预设姿势（按当前精度换算）
+function presetPoses() {
+  // 来自当前角色的 presets；字符串名换算成坐标，对象原样用
+  const cfg = SKINS[curSkin];
+  if (!cfg) return {};
+  const out = {};
+  for (const [name, p] of Object.entries(cfg.presets)) out[name] = normalizePreset(p);
+  return out;
+}
+function renderPresets() {
+  const box = document.getElementById("presets");
+  box.replaceChildren();
+  const P = presetPoses();
+  for (const [name, p] of Object.entries(P)) {
+    const b = document.createElement("button");
+    b.className = "btn";
+    b.textContent = name;
+    b.addEventListener("click", () => {
+      pose = { ...p };
+      document.querySelectorAll("#presets .btn").forEach((o) => o.classList.remove("on"));
+      b.classList.add("on");
+      draw();
+    });
+    box.append(b);
+  }
 }
 document.getElementById("skel").addEventListener("change", draw);
+document.getElementById("hair-smooth").addEventListener("change", (e) => { hairSmooth = e.target.checked; draw(); });
+
+// ---- 精度滑块：重设骨骼倍数，姿势按比例换算保持形状
+document.getElementById("px-acc").addEventListener("input", (e) => {
+  const k = +e.target.value;
+  document.getElementById("px-acc-v").textContent = k + "x";
+  const old = SCALE, oldPose = pose;
+  // 屏幕显示大小不变：逻辑坐标缩小 k/old 倍，显示缩放反向放大补偿
+  const zoomAdj = ZOOM * (old / k);
+  setScale(k);
+  SCALE = k;
+  // 姿势坐标按比例换算（lean/yaw 等角度不动）
+  const ANG = new Set(["lean", "yaw", "turn", "twist", "sa", "sb", "hx", "hy"]);
+  const q = {};
+  for (const [key, v] of Object.entries(oldPose)) q[key] = ANG.has(key) ? v : v * (k / old);
+  pose = q;
+  ZOOM = Math.max(1, Math.min(10, zoomAdj));
+  document.getElementById("view-zoom").value = ZOOM;
+  document.getElementById("view-zoom-v").textContent = ZOOM + "x";
+  rebuildHair();
+  fitCanvasToChar();
+  draw();
+});
+
+// ---- 头发滑块
+const bind = (id, fn, fmt) => {
+  const inp = document.getElementById(id), val = document.getElementById(id + "-v");
+  inp.addEventListener("input", () => { fn(+inp.value); val.textContent = fmt ? fmt(+inp.value) : inp.value; draw(); });
+};
+bind("hair-grav", (v) => { HAIR.gravity = v; hairBack.set({ gravity: v }); hairFront.set({ gravity: v * 1.2 }); });
+bind("hair-jit",  (v) => { HAIR.jitter = v; hairBack.set({ jitter: v }); hairFront.set({ jitter: v }); });
+bind("hair-damp", (v) => { HAIR.damping = v; hairBack.set({ damping: v }); hairFront.set({ damping: v }); });
+bind("hair-stiff",(v) => { HAIR.stiffness = v; hairBack.set({ stiffness: v }); hairFront.set({ stiffness: v }); });
+bind("hair-segs", (v) => { hairSegs = v; rebuildHair(); });
+bind("hair-str",  (v) => { hairStrands = v; rebuildHair(); });
+bind("hair-len",  (v) => { hairSegLen = v; rebuildHair(); });
+bind("view-zoom", (v) => { ZOOM = v; });
 
 function updateInfo() {
   const d = (v) => +(+v).toFixed(1);
@@ -216,23 +388,35 @@ function updateInfo() {
   document.getElementById("out").textContent = "const pose = {" + String.fromCharCode(10) + entries.join(String.fromCharCode(10)) + String.fromCharCode(10) + "};";
   const sk = skeleton(pose);
   document.getElementById("facts").innerHTML = [
-    ["pelvis height", d(sk.joints.pelvis[1]) + " px"],
-    ["chest", d(sk.joints.chest[0]) + ", " + d(sk.joints.chest[1])],
-    ["near hand", d(sk.joints.handN[0]) + ", " + d(sk.joints.handN[1])],
-    ["far hand", d(sk.joints.handF[0]) + ", " + d(sk.joints.handF[1])],
-    ["out of reach", shortfall(pose) > 0.75 ? "yes" : "no"],
-    ["body pixels", posed(pose).n],
+    ["骨盆高度", d(sk.joints.pelvis[1]) + " px"],
+    ["头顶", d(sk.joints.crown[1]) + " px"],
+    ["近手", d(sk.joints.handN[0]) + ", " + d(sk.joints.handN[1])],
+    ["远手", d(sk.joints.handF[0]) + ", " + d(sk.joints.handF[1])],
+    ["身体像素", posed(pose).n],
   ].map(([k, v]) => "<dt>" + k + "</dt><dd>" + v + "</dd>").join("");
 }
 
-// 呼吸演示：身体轻微起伏，看关节怎么跟着动
+// 画布尺寸 = 容器尺寸（跟随窗口），显示大小由 ZOOM 决定，不产生滚动条
+function fitCanvasToChar() {
+  const box = canvas.parentElement;
+  const availW = box.clientWidth || 600, availH = box.clientHeight || 400;
+  canvas.width = Math.max(400, Math.round(availW));
+  canvas.height = Math.max(300, Math.round(availH));
+  W = canvas.width; H = canvas.height;
+  OX = Math.round(W / 2); OY = Math.round(H - 40);
+}
+window.addEventListener("resize", () => { fitCanvasToChar(); draw(); });
+
+// 呼吸动画
 function tick(stamp) {
   raf = 0;
   if (!breathOn) return;
   const dt = Math.min(0.1, (stamp - lastStamp) / 1000);
   lastStamp = stamp;
   breathT += dt;
-  pose = { ...pose, crouch: 3 + Math.sin(breathT * 2.5) * 1.5, fy: STAND.fy + Math.sin(breathT * 2.5) * 1.5, by: STAND.by + Math.sin(breathT * 2.5) * 1.5 };
+  const s = Math.sin(breathT * 2.5);
+  const S = STAND();
+  pose = { ...pose, crouch: 3 * SCALE + s * 1.5 * SCALE, fy: S.fy + s * 1.5 * SCALE, by: S.by + s * 1.5 * SCALE };
   draw();
   raf = requestAnimationFrame(tick);
 }
@@ -242,7 +426,26 @@ document.getElementById("breath").addEventListener("change", (e) => {
   if (breathOn && !raf) raf = requestAnimationFrame(tick);
 });
 
-draw();
+// 启动：等 rig-big 模块就绪再初始化（_rig 是动态 import 赋值的，直接用可能 undefined）
+Promise.all([
+  import("./core/rig-big.js"),
+  import("./skins/standard.js"),
+  import("./skins/orc.js"),
+]).then(([m, std, orc]) => {
+  _rig = m;
+  SKINS["标准人形"] = std.default;
+  SKINS["兽人战士"] = orc.default;
+  setScale(5);
+  SCALE = 5;
+  curSkin = "标准人形";
+  setProportions(SKINS["标准人形"].proportions);
+  pose = { ...m.STAND, crouch: 15 };
+  rebuildHair();
+  renderSkinButtons();
+  renderPresets();
+  fitCanvasToChar();
+  draw();
+});
 </script>
 </body>
 </html>
