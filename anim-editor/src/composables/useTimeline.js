@@ -243,7 +243,6 @@ export function useTimeline({ project, time, selected, selectedId, engineGetter,
     const fps = normalizeFps(project.fps);
     const startF = clip.f ?? Math.round(clip.t * fps);
     const startFEnd = clip.fEnd ?? Math.round(clipEndOf(clip) * fps);
-    const startT = clip.t; // 拖拽起点（秒）；鼠标位移换算成秒后再取整到帧
     const startTrack = clip.trackId;
     const startRow = clip.row ?? 0;
     let previewRow = null;
@@ -256,18 +255,20 @@ export function useTimeline({ project, time, selected, selectedId, engineGetter,
     const laneGeo = snapshotLanes(); // 冻结轨道几何，避免临时行撑高导致判定漂移
     const move = (ev) => {
       moved = true;
-      const snapFrames = (v) => Math.round(v * fps);
+      // 位移一律相对“按下时”的帧数计算：clip.f / clip.fEnd 在 move 里会被改写，
+      // 拿它们当基准会让每次移动都在上一次结果上再累加，手柄就会越拖越长。
+      const dF = Math.round(((ev.clientX - startX) / pxPerSec.value) * fps);
       if (edge === "right") {
-        const endSec = (clip.fEnd ?? startFEnd) / fps + (ev.clientX - startX) / pxPerSec.value;
-        setClipFrames(project, clip, clip.f, Math.max(clip.f + 1, snapFrames(endSec)));
+        const f = clip.f ?? startF;
+        setClipFrames(project, clip, f, Math.max(f + 1, Math.min(totalFrames.value, startFEnd + dF)));
         resizeSink();
       } else if (edge === "left") {
-        const f = Math.min(startFEnd - 1, Math.max(0, snapFrames(startT + (ev.clientX - startX) / pxPerSec.value)));
+        const f = Math.max(0, Math.min(startFEnd - 1, startF + dF));
         setClipFrames(project, clip, f, startFEnd);
         resizeSink();
       } else {
         const durF = startFEnd - startF;
-        const f = Math.max(0, Math.min(totalFrames.value - durF, snapFrames(startT + (ev.clientX - startX) / pxPerSec.value)));
+        const f = Math.max(0, Math.min(totalFrames.value - durF, startF + dF));
         setClipFrames(project, clip, f, f + durF);
         // 场景1：跨轨道拖拽。参考框 = 实际落位行（从鼠标所在行向下找空行；全满→临时新行）
         const hit = laneHitAtFrozen(laneGeo, ev.clientY);
