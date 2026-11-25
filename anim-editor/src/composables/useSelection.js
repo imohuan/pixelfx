@@ -1,34 +1,44 @@
 // 属性面板的编辑回调：改的是 selected clip 的字段，改完排一帧重绘。
 import * as EN from "../../engine.js";
+import { normalizeFps, setClipFrames, setProjectDurationFrames, setProjectFps } from "../lib/frames.js";
+import { fxNameCn } from "../lib/fx-names.js";
 
-const { loadFx } = EN;
+const { loadFx, loadedFx } = EN;
 
 export function useSelection({ selected, project, time, scheduleDraw, engineGetter, setTime }) {
   function onStartChange(v) {
     const c = selected.value;
     if (!c) return;
-    c.t = Math.max(0, Number(v) || 0);
-    if (c.until != null && c.until <= c.t) c.until = Math.min(project.duration, c.t + 0.2);
+    const fps = normalizeFps(project.fps);
+    // 输入框在帧模式下给的是帧号，直接当帧用
+    const f = Number.isFinite(Number(v)) ? Math.max(0, Math.round(Number(v))) : Math.round((Number(c.t) || 0) * fps);
+    setClipFrames(project, c, f, Math.max(f + 1, c.fEnd ?? f + 1));
     scheduleDraw();
   }
   function setEnd(v) {
     const c = selected.value;
     if (!c) return;
-    c.until = Math.max(c.t + 0.05, Math.min(project.duration, Number(v) || 0));
+    const fps = normalizeFps(project.fps);
+    setClipFrames(project, c, c.f ?? 0, Math.round(Number(v) || 0));
     scheduleDraw();
   }
   function onDurationChange(v) {
-    const d = Math.max(0.3, Number(v) || 0.3);
-    project.duration = Math.round(d * 1000) / 1000;
+    const fps = normalizeFps(project.fps);
+    setProjectDurationFrames(project, Math.round((Number(v) || 0.3) * fps));
     if (time.value > project.duration) setTime(project.duration);
   }
   function onFpsChange(v) {
-    project.fps = Math.max(1, Math.round(Number(v) || 24));
+    // 动作真实时长不变，只换格子：24 → 30 只是采样变细，片段最多挪半帧
+    setProjectFps(project, v);
+    if (time.value > project.duration) setTime(project.duration);
+    scheduleDraw();
+    return [];
   }
   function onActChange(v) {
     const c = selected.value;
     if (!c) return;
     c.actRef = v && v !== "none" ? v : null;
+    // 动作名不存字段，显示时按 actRef 翻成中文（见 labels.js actName）
     if (c.actRef) loadFx(c.actRef).then(scheduleDraw);
     scheduleDraw();
   }
@@ -42,8 +52,19 @@ export function useSelection({ selected, project, time, scheduleDraw, engineGett
     const c = selected.value;
     if (!c) return;
     c.fxId = v;
+    // 换特效必须同时换名字，否则时间轴还挂着上一个特效的中文名
+    c.label = fxNameCn(v);
     engineGetter()?.invalidate();
     loadFx(v).then(() => { engineGetter()?.invalidate(); scheduleDraw(); });
+    scheduleDraw();
+  }
+  /** 改角色名 / 特效名：空字符串回到默认中文名 */
+  function onLabelChange(v) {
+    const c = selected.value;
+    if (!c) return;
+    const name = String(v ?? "").trim();
+    if (c.type === "fx") c.label = name || fxNameCn(c.fxId);
+    else if (c.type === "character") c.label = name || "角色";
     scheduleDraw();
   }
   function onSeedChange(v) {
@@ -104,5 +125,5 @@ export function useSelection({ selected, project, time, scheduleDraw, engineGett
     if (!eng || !c) return null;
     return eng.actionInfo(c, time.value);
   }
-  return { onStartChange, setEnd, onDurationChange, onFpsChange, onActChange, onWeaponChange, onFxChange, onSeedChange, onPaletteChange, onToggleTo, setFrom, setTo, setBox, onBindChange, actionInfo };
+  return { onStartChange, setEnd, onDurationChange, onFpsChange, onActChange, onWeaponChange, onFxChange, onLabelChange, onSeedChange, onPaletteChange, onToggleTo, setFrom, setTo, setBox, onBindChange, actionInfo };
 }

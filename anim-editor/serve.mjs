@@ -32,6 +32,23 @@ createServer(async (req, res) => {
     } catch { res.writeHead(404).end("{}"); }
     return;
   }
+  // 导出的 chain 脚本：写进仓库的 src/fx/moves/，画廊和 node tools 直接能用
+  if (path === "/api/move" && req.method === "POST") {
+    let body = "";
+    req.on("data", (c) => body += c);
+    req.on("end", async () => {
+      try {
+        const { name, source } = JSON.parse(body);
+        if (!/^[a-z0-9-]+$/.test(String(name))) throw new Error("bad name");
+        if (typeof source !== "string" || !source.trim()) throw new Error("empty source");
+        const dir = join(HERE, "..", "src", "fx", "moves");
+        await mkdir(dir, { recursive: true });
+        await writeFile(join(dir, name + ".js"), source);
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, file: `src/fx/moves/${name}.js` }));
+      } catch (e) { res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: String(e.message ?? e) })); }
+    });
+    return;
+  }
   if (path === "/") path = "/index.html";
   if (path.endsWith("/")) path += "index.html";
   // /pixelfx/* 映射到仓库的 src/（浏览器 import fx 模块用）

@@ -23,7 +23,7 @@ export const ClipLibrary = {
               @click="ctx.selectClip(c.id)">
         <span class="material-symbols-outlined clip-ico" :class="'ico-' + c.type">{{ ctx.typeIcon(c.type) }}</span>
         <span class="text-xs truncate flex-1">{{ ctx.labelOf(c) }}</span>
-        <span class="font-mono clip-time">{{ c.t.toFixed(2) }}s</span>
+        <span class="font-mono clip-time">{{ c.f }}f</span>
       </button>
       <kit-empty v-if="!ctx.sortedClips.length" icon="inbox" title="还没有标签" desc="用上方按钮添加一个"></kit-empty>
     </div>

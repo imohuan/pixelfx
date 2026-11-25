@@ -8,6 +8,8 @@ const { FX_TAGS, MOVE_TAGS, isMoveFx, SKIN_NAMES, SKIN_TINT, WEAPONS, loadAllAct
 
 export function useResourceTab(project) {
   const rightTab = Vue.ref("props");
+  // 「资源」tab 当前看的是哪一类（move / weapon / fx）；属性里的「换」也会改它
+  const assetKind = Vue.ref("move");
   const libCat = Vue.ref("moves");
   const libGroups = Vue.ref([]);
   loadFxLibrary().then((lib) => {
@@ -29,20 +31,34 @@ export function useResourceTab(project) {
   const libCards = Vue.computed(() => {
     const g = libGroups.value.find((x) => x.id === libCat.value);
     if (!g) return [];
-    return g.ids.map((id) => ({ value: id, label: id, short: fxNameCn(id) }));
+    return g.ids.map((id) => ({ value: id, label: fxNameCn(id) + "（" + id + "）", short: fxNameCn(id) }));
   });
   const libCount = Vue.computed(() => libGroups.value.reduce((s, g) => s + g.ids.length, 0));
+  // 资源 tab 里的「特效」：全量注册表（和资源标签一致），不只属性面板的常用清单
+  const allFxCards = Vue.computed(() => {
+    const seen = new Set();
+    const out = [];
+    for (const g of libGroups.value) {
+      for (const id of g.ids) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push({ value: id, label: fxNameCn(id) + "（" + id + "）", short: fxNameCn(id) });
+      }
+    }
+    return out;
+  });
 
   const actTags = Vue.ref(MOVE_TAGS);
   loadAllActTags().then((tags) => { actTags.value = tags; }).catch(() => {});
   const moveOptions = Vue.computed(() => [{ label: "站姿（无动作）", value: "none" }].concat(actTags.value.map((id) => ({ label: id, value: id }))));
-  const weaponOptions = [{ label: "跟随动作脚本", value: "none" }].concat(WEAPONS.map((w) => ({ label: w, value: w })));
+  const weaponOptions = [{ label: "武器默认", value: "none" }].concat(WEAPONS.map((w) => ({ label: w, value: w })));
   const moveCards = Vue.computed(() => [{ value: "none", label: "站姿（无动作）", short: "站姿", icon: "accessibility_new" }]
-    .concat(actTags.value.map((id) => ({ value: id, label: id, short: fxNameCn(id) }))));
-  const weaponCards = [{ value: "none", label: "跟随动作脚本", short: "自动", icon: "auto_mode" }]
-    .concat(WEAPONS.map((w) => ({ value: w, label: w, short: WEAPON_LABELS[w] || w })));
+    // label 用作鼠标悬停提示：中文名 + 原始 id，方便对上代码里的动作
+    .concat(actTags.value.map((id) => ({ value: id, label: fxNameCn(id) + "（" + id + "）", short: fxNameCn(id) }))));
+  const weaponCards = [{ value: "none", label: "武器默认（跟随动作脚本自带的武器）", short: "武器默认", icon: "auto_mode" }]
+    .concat(WEAPONS.map((w) => ({ value: w, label: (WEAPON_LABELS[w] || w) + "（" + w + "）", short: WEAPON_LABELS[w] || w })));
   const fxOptionsAll = Vue.computed(() => FX_TAGS.concat(actTags.value)
-    .map((id) => ({ label: (isMoveFx(id) ? "[动作] " : "") + id, value: id })));
+    .map((id) => ({ label: (isMoveFx(id) ? "[动作] " : "") + fxNameCn(id) + "（" + id + "）", value: id })));
   const fxCards = Vue.computed(() => fxOptionsAll.value.map((o) => ({ value: o.value, label: o.label, short: fxNameCn(o.value) })));
 
   const paletteOptions = PALETTE_OPTIONS;
@@ -64,5 +80,5 @@ export function useResourceTab(project) {
     out.push({ label: "角色（任意一个）", short: "任意角色", value: "character" });
     return out;
   });
-  return { rightTab, libCat, libGroups, libCards, libCount, actTags, moveOptions, weaponOptions, moveCards, weaponCards, fxCards, fxOptionsAll, paletteOptions, skinOptions, paletteCards, skinCards, bindOptions };
+  return { rightTab, assetKind, libCat, libGroups, libCards, libCount, allFxCards, actTags, moveOptions, weaponOptions, moveCards, weaponCards, fxCards, fxOptionsAll, paletteOptions, skinOptions, paletteCards, skinCards, bindOptions };
 }

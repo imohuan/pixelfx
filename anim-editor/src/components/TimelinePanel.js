@@ -18,16 +18,17 @@ export const TimelinePanel = {
       <button type="button" class="tl-icon" title="下一帧（→）" @click="ctx.stepFrame(1)"><span class="material-symbols-outlined">skip_next</span></button>
       <button type="button" class="tl-icon" title="停止并回到开头" @click="ctx.stop"><span class="material-symbols-outlined">stop</span></button>
       <span class="tl-sep"></span>
-      <span class="tl-readout" title="当前时间"><span>{{ ctx.tlMode === 'frame' ? '帧号' : '时间' }}</span><b>{{ ctx.tlMode === 'frame' ? ctx.frameNo : ctx.time.toFixed(2) + 's' }}</b></span>
+      <span class="tl-readout" title="当前时间"><span>{{ ctx.tlMode === 'frame' ? '帧号' : '时间' }}</span><b>{{ ctx.tlMode === 'frame' ? ctx.frameNo : ctx.time.toFixed(3) + 's' }}</b></span>
       <span class="tl-readout" title="当前帧 / 总帧"><span>帧</span><b>{{ ctx.frameNo }} / {{ ctx.totalFrames }}</b></span>
-      <label class="tl-readout" title="每秒帧数">
+      <label class="tl-readout" title="编排帧率：保存、导出、时间轴格子都用它">
         <span>FPS</span>
-        <kit-number-field class="tl-nf" :slider="false" :model-value="ctx.project.fps" :min="1" :max="60" @update:model-value="ctx.onFpsChange"></kit-number-field>
+        <kit-number-field class="tl-nf" :slider="false" :precision="0" :model-value="ctx.project.fps" :min="1" :max="240" @update:model-value="ctx.onFpsChange"></kit-number-field>
       </label>
-      <label class="tl-readout" title="总时长（秒）">
-        <span>时长</span>
-        <kit-number-field class="tl-nf" :slider="false" :model-value="ctx.project.duration" :min="0.3" :max="60" :step="0.1" precision="2" @update:model-value="ctx.onDurationChange"></kit-number-field>
+      <label class="tl-readout" title="总帧数：改帧率时保持不变，播放速度随之变化">
+        <span>总帧</span>
+        <kit-number-field class="tl-nf" :slider="false" :model-value="ctx.project.durationFrames" :min="1" :max="7200" :step="1" :precision="0" @update:model-value="ctx.onDurationChange"></kit-number-field>
       </label>
+      <span class="tl-readout tl-dur" title="换算出来的总时长"><span>时长</span><b>{{ ctx.project.duration.toFixed(3) }}s</b></span>
       <span class="tl-spacer"></span>
       <span class="tl-sel">已选 <b>{{ ctx.selected ? 1 : 0 }}</b> 段</span>
       <button type="button" class="tl-btn" @click="ctx.addTrack"><span class="material-symbols-outlined">add</span>轨道</button>
@@ -73,7 +74,7 @@ export const TimelinePanel = {
                  class="tl-clip"
                  :class="[p.clip.type, { 'is-sel': p.clip.id === ctx.selectedId, 'is-dragging': p.clip.id === ctx.dragId }]"
                  :style="{ left: (p.clip.t * ctx.pxPerSec) + 'px', width: Math.max(14, (ctx.clipEnd(p.clip) - p.clip.t) * ctx.pxPerSec) + 'px', top: (p.row * ctx.ROW_H + 4) + 'px', height: (ctx.ROW_H - 8) + 'px', '--clip-cell': ctx.clipCell + 'px' }"
-                 :title="ctx.labelOf(p.clip) + '  ' + p.clip.t.toFixed(2) + 's - ' + ctx.clipEnd(p.clip).toFixed(2) + 's'"
+                 :title="ctx.labelOf(p.clip) + '  帧 ' + p.clip.f + ' - ' + p.clip.fEnd + '  (' + p.clip.t.toFixed(3) + 's - ' + p.clip.until.toFixed(3) + 's)'"
                  @pointerdown.stop="ctx.onClipDown($event, p.clip)">
               <span class="tl-clip-lbl">{{ ctx.labelOf(p.clip) }}</span>
               <span v-if="ctx.tlMode === 'frame' && (ctx.clipEnd(p.clip) - p.clip.t) * ctx.pxPerSec >= 96" class="tl-clip-frames">{{ ctx.framesOf(p.clip) }}f</span>
@@ -83,7 +84,7 @@ export const TimelinePanel = {
             </div>
             <div v-for="s in ctx.hitMarks(tr.id)" :key="'hit' + s.id"
                  class="tl-hit" :style="{ left: (s.t * ctx.pxPerSec) + 'px' }"
-                 :title="'HIT ' + s.t.toFixed(2) + 's'"></div>
+                 :title="'HIT 第 ' + Math.round(s.t * ctx.project.fps) + ' 帧（' + s.t.toFixed(3) + 's）'"></div>
           </div>
           <div class="tl-playhead" :style="{ left: (ctx.time * ctx.pxPerSec) + 'px' }">
             <span class="tl-playhead-cap"></span>

@@ -6,6 +6,58 @@ import {
   poseAt, PAL, Target, backdrop,
 } from "/pixelfx/core/index.js";
 
+// 导出脚本时要用到的测量函数，统一从这里取，避免 app 层再引一次 core。
+export { actBounds };
+export const palettes = PAL;
+
+// 导出脚本时用：在内存里拼一个临时模块，量出画面范围（返回模块导出）。
+export async function measureMoveSource(source, totalFrames, fps) {
+  const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+  try {
+    const mod = await import(url);
+    return measureActModule(mod, totalFrames, fps);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** 让模块跑完整段动作，量出真实像素范围；返回 { size, origin, bounds }（局部坐标）。 */
+export function measureActModule(mod, totalFrames, fps) {
+  const seconds = totalFrames / fps;
+  const pad = 6;
+  // 探测画布要足够大，避免粒子飞出边界被裁掉；最终尺寸由真实像素决定
+  const probeW = 900, probeH = 480;
+  const midX = 220, groundY = 400;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  const frame = createFrame(probeW, probeH, -midX, -groundY);
+  // 人物站在局部坐标原点；frame.ox/oy 把它摆到探测画布中间
+  const act = createAct(mod, { x: 0, y: 0 });
+  const steps = Math.max(2, Math.round(seconds * 60));
+  for (let i = 0; i <= steps; i++) {
+    clearFrame(frame);
+    act.draw(frame, { body: true, target: true });
+    for (let y = 0; y < probeH; y++) {
+      for (let x = 0; x < probeW; x++) {
+        const j = y * probeW + x;
+        if (!((frame.color[j] >>> 24) | (frame.light[j] & 0xffffff))) continue;
+        const wx = x + frame.ox, wy = y + frame.oy;
+        if (wx < minX) minX = wx;
+        if (wx > maxX) maxX = wx;
+        if (wy < minY) minY = wy;
+        if (wy > maxY) maxY = wy;
+      }
+    }
+    if (i < steps) act.update(1 / 60);
+  }
+  if (!isFinite(minX)) return { size: [120, 120], origin: [60, 100], bounds: { x0: -40, x1: 40, y0: -80, y1: 0 }, empty: true };
+  const x0 = Math.floor(minX), x1 = Math.ceil(maxX), y0 = Math.floor(minY), y1 = Math.ceil(maxY);
+  return {
+    size: [Math.max(24, x1 - x0 + 1 + pad * 2), Math.max(24, y1 - y0 + 1 + pad * 2)],
+    origin: [-x0 + pad, -y0 + pad],
+    bounds: { x0, x1, y0, y1 },
+  };
+}
+
 export const FX_TAGS = [
   "arcane/spell-charge", "ice/ice-lance", "ice/snowflake-burst", "ice/frost-nova",
   "melee/sword-slash", "melee/double-slash", "melee/heavy-cleave", "melee/spear-sweep",
@@ -184,8 +236,8 @@ export async function makeFxPreview(canvas, id, opts = {}) {
   // 动作：actBounds 是整个表演的范围，切掉地面以下；特效：用 meta.size。
   // 舞台 = 内容框按 pad 放大并扩展到目标比例。画布本身 = 舞台大小（1 舞台像素 = 1 特效像素），
   // 卡片上用 CSS 拉伸显示（image-rendering: pixelated），不做 drawImage 缩放。
-  // bodyOnly：特效宫格里的动作卡也只演人物本体
-  const acted = isMoveFx(id) && !!mod.act;
+  // bodyOnly：动作脚本卡只演人物本体（不限 moves/，任何带 act 的特效都算动作）
+  const acted = !!mod.act && (isMoveFx(id) || opts.bodyOnly === true);
   const D = Math.max(0.2, meta.duration ?? 1);
   let cw, ch, px, py;
   let bgBuf = null;
@@ -388,7 +440,10 @@ export function screenToWorld(sx, sy) {
 // ---------------- 状态 ----------------
 export function defaultProject() {
   return {
-    duration: 4.34,
+    schema: "anim-fx/2",
+    name: "冰标枪",
+    duration: 4.375,
+    durationFrames: 105,
     fps: 24,
     tracks: [
       { id: "tr-char", name: "角色" },
@@ -396,34 +451,12 @@ export function defaultProject() {
       { id: "tr-target", name: "靶子" },
     ],
     clips: [
-      { id: "c-char", trackId: "tr-char", type: "character", t: 0, until: 4.34, actRef: "moves/ice-lance-throw", actStart: 0, x: 0, y: 0, scale: 1, angle: 0 },
-      { id: "c-tgt", trackId: "tr-target", type: "target", t: 0, until: 4.34, x: 170, y: 0 },
-      { id: "c-charge", trackId: "tr-fx", type: "fx", t: 0.06, until: 0.8, fxId: "arcane/spell-charge", from: [0, 0], to: [0, 0], scale: 1, angle: 0, seed: 1, palette: "冰", label: "聚气" },
-      { id: "c-lance", trackId: "tr-fx", type: "fx", t: 0.8, until: 1.14, fxId: "ice/ice-lance", from: [34, -24], to: [170, -24], scale: 1, angle: 0, seed: 1, palette: "冰", label: "标枪飞行" },
-      { id: "c-burst", trackId: "tr-fx", type: "fx", t: 1.14, until: 4.34, fxId: "ice/snowflake-burst", from: [170, -26], to: [170, -26], scale: 1, angle: 0, seed: 1, palette: "冰", label: "命中爆雪" },
-      { id: "c-state", trackId: "tr-target", type: "state", t: 1.14, until: 4.14, skin: "ice", hit: true, bindTo: "c-tgt", push: 2.4, straw: 12, shiver: 1.4, damage: 12, box: [130, -60, 80, 60] },
-    ],
-  };
-}
-export function iceLanceProject() { return defaultProject(); }
-export function swordComboProject() {
-  return {
-    duration: 2.975, fps: 24,
-    tracks: [
-      { id: "tr-char", name: "角色" },
-      { id: "tr-fx", name: "特效" },
-      { id: "tr-target", name: "靶子" },
-    ],
-    clips: [
-      { id: "sc-char", trackId: "tr-char", type: "character", t: 0, until: 2.975, actRef: "moves/sword-combo", actStart: 0, x: 0, y: 0, scale: 1, angle: 0 },
-      { id: "sc-tgt", trackId: "tr-target", type: "target", t: 0, until: 2.975, x: 118, y: 0 },
-      { id: "sc-1", trackId: "tr-fx", type: "fx", t: 0, until: 0.5, fxId: "melee/sword-slash", from: [0, 0], to: [0, 0], scale: 1, angle: 0, seed: 1, palette: "default", label: "第一斩" },
-      { id: "sc-2", trackId: "tr-fx", type: "fx", t: 0.5, until: 1.04, fxId: "melee/double-slash", from: [10, 0], to: [10, 0], scale: 1, angle: 0, seed: 1, palette: "default", label: "十字双击" },
-      { id: "sc-3", trackId: "tr-fx", type: "fx", t: 1.04, until: 2.975, fxId: "melee/heavy-cleave", from: [20, 0], to: [20, 0], scale: 1, angle: 0, seed: 1, palette: "default", label: "重劈" },
-      { id: "sc-h1", trackId: "tr-target", type: "state", t: 0.06, until: 0.5, skin: "red", hit: true, bindTo: "sc-tgt", push: 2.8, straw: 18, shiver: 0.6, damage: 12, box: [100, -60, 70, 60] },
-      { id: "sc-h2", trackId: "tr-target", type: "state", t: 0.56, until: 1.0, skin: "red", hit: true, bindTo: "sc-tgt", push: 1.4, straw: 8, damage: 8, box: [100, -60, 70, 60] },
-      { id: "sc-h3", trackId: "tr-target", type: "state", t: 0.66, until: 1.2, skin: "red", hit: true, bindTo: "sc-tgt", push: 2.8, straw: 18, shiver: 0.6, damage: 12, box: [100, -70, 70, 70] },
-      { id: "sc-h4", trackId: "tr-target", type: "state", t: 1.375, until: 2.6, skin: "red", hit: true, bindTo: "sc-tgt", push: 3.2, straw: 28, shiver: 1.0, damage: 22, box: [90, -50, 80, 50] },
+      { id: "c-char", trackId: "tr-char", type: "character", f: 0, fEnd: 105, t: 0, until: 4.375, actRef: "moves/ice-lance-throw", actStart: 0, x: 0, y: 0, scale: 1, angle: 0 },
+      { id: "c-charge", trackId: "tr-fx", type: "fx", f: 1, fEnd: 19, t: 0.041667, until: 0.791667, fxId: "arcane/spell-charge", from: [0, 0], to: [0, 0], scale: 1, angle: 0, seed: 1, palette: "冰", label: "聚气" },
+      { id: "c-lance", trackId: "tr-fx", type: "fx", f: 19, fEnd: 27, t: 0.791667, until: 1.125, fxId: "ice/ice-lance", from: [34, -24], to: [170, -24], scale: 1, angle: 0, seed: 1, palette: "冰", label: "标枪飞行" },
+      { id: "c-burst", trackId: "tr-fx", type: "fx", f: 27, fEnd: 104, t: 1.125, until: 4.333333, fxId: "ice/snowflake-burst", from: [170, -26], to: null, scale: 1, angle: 0, seed: 1, palette: "冰", label: "命中爆雪" },
+      { id: "c-tgt", trackId: "tr-target", type: "target", f: 0, fEnd: 105, t: 0, until: 4.375, x: 170, y: 0 },
+      { id: "c-state", trackId: "tr-target", type: "state", f: 27, fEnd: 100, t: 1.125, until: 4.166667, skin: "ice", hit: true, bindTo: "c-tgt", push: 2.4, straw: 12, shiver: 1.4, damage: 12, box: [130, -60, 80, 60] },
     ],
   };
 }
@@ -698,13 +731,14 @@ export function createEngine(canvas) {
         a.skin = st ? st.skin : null;
         a.shiver = st ? (st.shiver ?? 0) : 0;
         const hitClip = clipsOf("state").find((s) => s.hit && bindsTo(s, tc) && Math.abs(time - s.t) < 0.035);
-        // 回退时间：已过命中点就不再留着稻草/摆动，否则倒带后残渣还在飘
+          // 回退时间：已过命中点就不再留着稻草/摆动，否则倒带后残渣还在飘
         const anyHit = clipsOf("state").filter((s) => s.hit && bindsTo(s, tc));
         if (anyHit.length && !anyHit.some((s) => time >= s.t - 1e-6)) {
           if (a.straw.length) a.straw.length = 0;
           a.theta = 0; a.omega = 0; a.flashT = 0; a.lastHitKey = null;
         }
         if (hitClip) {
+          // 命中只触发一次：按「进入该状态的时间」判键，倒带回放才会重新演
           const key = hitClip.id + ":" + Math.floor(time / Math.max(0.01, E.project.duration));
           if (a.lastHitKey !== key) {
             a.lastHitKey = key;
@@ -748,7 +782,8 @@ export function createEngine(canvas) {
           }
           const D = meta?.duration ?? 1;
           const winLen = clipEnd(clip) - clip.t;
-          const looping = winLen > D + 1e-6;
+          // 差不到半帧就当整段放完：否则末尾会闪一下循环开头
+          const looping = winLen > D + 0.5 / Math.max(1, E.project.fps);
           const loopT = looping ? localT % D : Math.min(localT, D);
           if (loopT >= inst.t) { if (loopT - inst.t > 1e-4) inst.update(loopT - inst.t); }
           else {

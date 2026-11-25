@@ -314,8 +314,11 @@ export function createAct(mod, o = {}) {
       while (ghosts.length && ghosts[0].age > GHOST_LIFE) ghosts.shift();
     },
     /** Paint it. { body: false } leaves the character out, { target: false } the target. */
-    draw(frame, { body = true, target: showTarget = true, fx = true } = {}) {
+    // `showFx` used to be named `fx`, which shadowed the effect instance below and threw on the first active frame.
+    draw(frame, opts = {}) {
+      const { body = true, target: showTarget = true, fx: showFx = true } = opts ?? {};
       const W = frame.w, H = frame.h, q = last ?? poseNow(), active = t >= 0;
+      const paintFx = showFx ? fx : null;
       const tgt = showTarget ? targets : [];
       const drawTargets = () => tgt.forEach((g) => g.draw(frame.color, W, H, FX, FY, flip));
       const drawStraw = () => tgt.forEach((g) => g.drawStraw(frame.color, W, H, FX, FY, flip));
@@ -330,9 +333,9 @@ export function createAct(mod, o = {}) {
       };
       const FX = X - (frame.ox | 0), FY = Y - (frame.oy | 0);
       if (!body) {
-        if (active && fx) fx.draw(frame, "back");
+        if (active && paintFx) paintFx.draw(frame, "back");
         drawTargets();
-        if (active && fx) fx.draw(frame, "front");
+        if (active && paintFx) paintFx.draw(frame, "front");
         drawStraw();
         return;
       }
@@ -370,12 +373,12 @@ export function createAct(mod, o = {}) {
       };
       if (!a.onBody) {
         // the effect doesn't care about the body: back, body, front
-        if (active && fx) fx.draw(frame, "back");
+        if (active && paintFx) paintFx.draw(frame, "back");
         drawTargets();
         shadow();
         drawGhosts();
         for (let i = 0; i < r.n; i++) paint(i, r.color[i]);
-        if (active && fx) fx.draw(frame, "front");
+        if (active && paintFx) paintFx.draw(frame, "front");
         drawStraw();
         drawDust();
         return;
@@ -384,12 +387,12 @@ export function createAct(mod, o = {}) {
       const { a: A, b: B } = scratchFor(frame);
       clearFrame(A);
       clearFrame(B);
-      if (active && fx) fx.draw(A, "back");
+      if (active && paintFx) paintFx.draw(A, "back");
       B.color.set(A.color);
       B.light.set(A.light);
       const tt = meta.loop ? (t < 0 ? 0 : t % D) : clamp(t, 0, D), alpha = active ? actorAlphaOf(mod, tt, fx.options) : 1;
       drawActor(painterFor(B).place(FX, FY, flip), fx.options.actor ?? stockActor(2), alpha);
-      if (active && fx) fx.draw(B, "front");
+      if (active && paintFx) paintFx.draw(B, "front");
       const follow = a.follow ?? 1, lean = (q.lean ?? 0) * follow, cr = (q.crouch ?? 0) * follow;
       // what's up on the body goes with it; what's on the floor stays on the floor
       const shiftOf = (ly) => {

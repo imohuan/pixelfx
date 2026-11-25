@@ -6,7 +6,9 @@ export function usePlayback({ time, project, drawNow, resetEngine }) {
   let lastTs = 0;
 
   function setTime(t) {
-    const v = Math.max(0, Math.min(project.duration, Number(t) || 0));
+    const fps = Math.max(1, Math.round(project.fps) || 24);
+    // 播放头只停在整帧上：拖动标尺也不会落到两帧之间
+    const v = Math.max(0, Math.min(project.duration, Math.round((Number(t) || 0) * fps) / fps));
     time.value = v;
     resetEngine();
     drawNow();

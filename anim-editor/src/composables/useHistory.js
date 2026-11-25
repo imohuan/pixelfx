@@ -33,6 +33,8 @@ export function useHistory({ project, engineGetter, afterRestore }) {
       tracks: JSON.parse(JSON.stringify(Vue.toRaw(project).tracks.map(cleanTrack))),
       clips: JSON.parse(JSON.stringify(Vue.toRaw(project).clips.map(cleanClip))),
       duration: project.duration,
+      durationFrames: project.durationFrames,
+      name: project.name,
       fps: project.fps,
     };
   }
@@ -71,6 +73,8 @@ export function useHistory({ project, engineGetter, afterRestore }) {
     project.tracks = JSON.parse(JSON.stringify(snap.tracks)).map(cleanTrack);
     project.clips = JSON.parse(JSON.stringify(snap.clips)).map(cleanClip);
     project.duration = snap.duration;
+    project.durationFrames = snap.durationFrames;
+    project.name = snap.name;
     project.fps = snap.fps;
     lastSnapshot = snapshot();
     Promise.resolve().then(() => {
@@ -103,6 +107,8 @@ export function useHistory({ project, engineGetter, afterRestore }) {
       tracks: JSON.parse(JSON.stringify(baseline.tracks ?? [])),
       clips: JSON.parse(JSON.stringify(baseline.clips ?? [])),
       duration: baseline.duration,
+      durationFrames: baseline.durationFrames,
+      name: baseline.name,
       fps: baseline.fps,
     } : snapshot();
     refreshState();

@@ -1,7 +1,7 @@
 // UI 层：Vue 3 + kit-ui-js。渲染全部交给 engine.js，这里只管组装 composable 和组件。
 // 一期重构：原 1284 行拆为 src/composables/*（逻辑）+ src/components/*（模板）+ src/lib/*（纯函数）。
 import * as EN from "./engine.js";
-import { PickCards, PickSeg, PickSwatch, FxLibrary, WEAPON_LABELS } from "./pick-cards.js";
+import { PickSeg, PickSwatch } from "./pick-cards.js";
 import { useProject, uid, clipEndOf, activeAt } from "./src/composables/useProject.js";
 import { useFiles } from "./src/composables/useFiles.js";
 import { usePlayback } from "./src/composables/usePlayback.js";
@@ -13,6 +13,9 @@ import { useSelection } from "./src/composables/useSelection.js";
 import { useGizmo } from "./src/composables/useGizmo.js";
 import { useCanvasView } from "./src/composables/useCanvasView.js";
 import { PropsPanel } from "./src/components/PropsPanel.js";
+import { MasonryGrid } from "./src/components/MasonryGrid.js";
+import { ResourceCard } from "./src/components/ResourceCard.js";
+import { ResourceTab } from "./src/components/ResourceTab.js";
 import { CanvasStage } from "./src/components/CanvasStage.js";
 import { TimelinePanel } from "./src/components/TimelinePanel.js";
 import { ClipLibrary } from "./src/components/ClipLibrary.js";
@@ -20,13 +23,15 @@ import { LayerPanel } from "./src/components/LayerPanel.js";
 import { useLayerRename } from "./src/composables/useLayerRename.js";
 import { useHistory } from "./src/composables/useHistory.js";
 import { vFocus } from "./src/directives/focus.js";
-import { ROW_H, TYPE_ICON, PALETTE_OPTIONS, PAL_HEX, hexOf, typeIcon, labelOf, skinColor, actLabel, actShort } from "./src/lib/labels.js";
+import { ROW_H, TYPE_ICON, PALETTE_OPTIONS, PAL_HEX, hexOf, typeIcon, labelOf, skinColor, actLabel, actShort,
+  characterName, actName, weaponName, fxName } from "./src/lib/labels.js";
+import { buildMoveSource, toMeasureSource, slugFor } from "./src/lib/exporter.js";
+import { normalizeFps, setProjectFps, setProjectDurationFrames, serializeProject } from "./src/lib/frames.js";
 
 const {
   SKIN_NAMES, WEAPONS, SKIN_TINT, loadFx, loadedFx,
   resetView, zoomAt, screenToWorld, view,
-  defaultProject, iceLanceProject, swordComboProject,
-  createEngine,
+  defaultProject, createEngine, measureMoveSource,
 } = EN;
 
 export function mount() {
@@ -105,6 +110,13 @@ export function mount() {
       const layerVersion = ref(0); // 眼睛切换驱动图层面板重渲染
       const activeLayerId = ref(project.tracks[0]?.id ?? null);
       const T = useTimeline({ project, time, selected, selectedId, engineGetter, scheduleDraw, setTime, clipEndOf, pxPerSec, tlMode });
+      // 帧率 / 总长：帧是唯一真值，秒跟着算
+      function onFpsChange(v) {
+        const cut = SEL.onFpsChange(v);
+        scheduleDraw();
+        if (cut?.length) notify?.warning(`帧率改为 ${project.fps} 后，这些特效的片段比本身短，尾部会被截掉：${cut.join("、")}`, 8000);
+      }
+      function onDurationChange(v) { SEL.onDurationChange(v); scheduleDraw(); }
       // 任何入口选中片段（时间轴/资源库/画布/轨道头），左侧图层都跟随高亮
       watch(selectedId, (id) => {
         const c = project.clips.find((x) => x.id === id);
@@ -140,21 +152,72 @@ export function mount() {
       const removeTrack = (id) => { LR.cancelRename(); origRemoveTrack(id); };
 
       // ---- 文件 ----
-      function applyProject(data) {
+      async function applyProject(data) {
         stop();
-        P.replaceAll(data);
+        const adopted = await P.replaceAll(data);
         time.value = 0;
         resetEngine();
-        H.reset(data);
+        H.reset(serializeProject(project));
         scheduleDraw();
+        return adopted;
       }
-      function loadExample(kind) {
-        applyProject(kind === "sword" ? swordComboProject() : iceLanceProject());
-        const c = project.clips.find((x) => x.type === "fx");
-        if (c) selectedId.value = c.id;
-        notify?.info(kind === "sword" ? "已载入：三连斩" : "已载入：冰标枪");
+
+      // ---- 预设：按钮和「载入」走同一条路，只是读的文件不同 ----
+      const presets = ref([]);
+      async function loadPresetList() {
+        try {
+          const j = await (await fetch("/data/presets/index.json")).json();
+          presets.value = Array.isArray(j?.presets) ? j.presets : [];
+        } catch { presets.value = []; }
       }
-      const F = useFiles({ project, applyProject, notify });
+      function notifyPresetFps(what) {
+        notify?.warning(`${what}，已按 24fps 换算。建议重新保存一次，把帧率写进文件。`, 7000);
+      }
+      async function loadPreset(id) {
+        const p = presets.value.find((x) => x.id === id);
+        if (!p) return;
+        try {
+          const res = await fetch("/data/presets/" + p.file);
+          if (!res.ok) throw new Error(`找不到预设文件 ${p.file}`);
+          const data = await res.json();
+          const adopted = await applyProject(data);
+          if (!adopted.fpsFromFile) notifyPresetFps(`预设「${p.name}」没有记录帧率`);
+          else notify?.info(`已载入预设：${p.name}（${project.fps}fps）`);
+          const c = project.clips.find((x) => x.type === "fx");
+          if (c) selectedId.value = c.id;
+        } catch (e) { notify?.error("载入预设失败：" + e.message); }
+      }
+
+      // ---- 导出 chain 脚本 ----
+      async function exportMove() {
+        const name = slugFor(project.name, project.slug);
+        const metaCache = new Map();
+        for (const c of project.clips) {
+          if (c.type === "fx" && c.fxId && !metaCache.has(c.fxId)) metaCache.set(c.fxId, loadedFx(c.fxId)?.meta ?? null);
+        }
+        const built = buildMoveSource({
+          project, name: project.name || name, size: [320, 200], origin: [120, 180],
+          metaOf: (id) => metaCache.get(id) ?? loadedFx(id)?.meta ?? null,
+          actModules: new Map(project.clips.filter((c) => c.actRef).map((c) => [c.actRef, loadedFx(c.actRef)])),
+        });
+        // 用真实渲染量出画布：先按临时尺寸生成一次，量完把 size / origin 写回去
+        let source = built.source;
+        try {
+          // blob 里 import 只认带协议的绝对地址，所以换成 http://本机/pixelfx/...
+          const base = new URL("/pixelfx/fx/moves/", location.href).href;
+          const probed = await measureMoveSource(toMeasureSource(source, base), built.totalFrames, built.fps);
+          source = source
+            .replace(`  size: [320, 200],`, `  size: [${probed.size[0]}, ${probed.size[1]}],`)
+            .replace(`  origin: [120, 180],`, `  origin: [${probed.origin[0]}, ${probed.origin[1]}],`);
+        } catch (e) {
+          built.warnings.push("测量画布失败，先用默认尺寸导出：" + e.message);
+        }
+        const r = await fetch("/api/move", { method: "POST", body: JSON.stringify({ name, source }) });
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error || "写入失败");
+        return { filename: j.file, cues: built.cues, totalFrames: built.totalFrames, warnings: built.warnings };
+      }
+      const F = useFiles({ project, applyProject, notify, exportMove, notifyPresetFps });
 
       // ---- 画布拖入特效 ----
       function stageWorldPoint(e) { return G.canvasPoint(e); }
@@ -167,7 +230,8 @@ export function mount() {
         const r = cv.getBoundingClientRect();
         if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
         const p = G.canvasPoint(e);
-        P.dropFxOnStage(fxId, p.x, p.y);
+        // 落在当前选中的图层里；该层放不下时由 dropFxOnStage 在它下面新建一层
+        P.dropFxOnStage(fxId, p.x, p.y, activeLayerId.value);
       }
       function onStageDragOver(e) { e.dataTransfer.dropEffect = "copy"; e.currentTarget.classList.add("drag-over"); }
       function onStageDragLeave(e) { e.currentTarget.classList.remove("drag-over"); }
@@ -235,6 +299,7 @@ export function mount() {
         canvasEl.value.addEventListener("pointercancel", G.onPointerUp);
         window.addEventListener("keydown", onKey);
         await Promise.all(["moves/ice-lance-throw", "arcane/spell-charge", "ice/ice-lance", "ice/snowflake-burst"].map((id) => loadFx(id).catch(() => null)));
+        await loadPresetList();
         drawNow();
         window.__editor.ready = true;
         window.dispatchEvent(new Event("anim-editor-ready"));
@@ -255,6 +320,13 @@ export function mount() {
         get time() { return time.value; },
         set time(v) { setTime(v); },
         project,
+        presets,
+        loadPreset,
+        exportMove,
+        save: F.save,
+        load: F.load,
+        onFpsChange,
+        setTlMode: T.setTlMode,
         get selected() { return selectedId.value; },
         select: (id) => { selectedId.value = id; },
         step: (dt) => { advance(dt); },
@@ -287,6 +359,7 @@ export function mount() {
       // ---- 模板上下文（reactive 包装让子组件里的 ref 正确解包） ----
       const ctx = Vue.reactive({
         project, time, playing, selectedId, selected, sortedClips, trackOptions,
+        presets, loadPreset,
         pxPerSec, viewScale, tlMode, tlModeLabel: T.tlModeLabel,
         scrollLeft: T.scrollLeft, scrollTop: T.scrollTop,
         totalW: T.totalW, totalH: T.totalH, totalFrames: T.totalFrames, frameNo: T.frameNo,
@@ -294,13 +367,16 @@ export function mount() {
         ROW_H, laneHeight: T.laneHeight, rowCount: T.rowCount, packed: T.packed, hitMarks: T.hitMarks,
         dragId: T.dragId, framesOf: T.framesOf,
         setTlMode: T.setTlMode, onTlScroll: T.onTlScroll, onTlWheel: T.onTlWheel,
+        onFpsChange, onDurationChange,
         onZoomInput: T.onZoomInput, onRulerDown: T.onRulerDown, onLaneDown: T.onLaneDown,
         stepFrame: T.stepFrame, onClipDown: T.onClipDown, trackActive: T.trackActive, trackIcon: T.trackIcon, dragGhost: T.dragGhost,
         clipEnd: (c) => clipEndOf(c),
         typeIcon, labelOf, skinColor, actLabel, actShort,
-        weaponShort: (c) => (c?.weapon ? (WEAPON_LABELS[c.weapon] || c.weapon) : "跟随脚本"),
-        fxShort: (c) => (c?.fxId ? c.fxId : ""),
-        rightTab: R.rightTab, libCat: R.libCat, libGroups: R.libGroups, libCards: R.libCards, libCount: R.libCount,
+        characterName, actName, weaponName, fxName,
+        weaponShort: weaponName,
+        fxShort: fxName,
+        rightTab: R.rightTab, assetKind: R.assetKind, libCat: R.libCat, libGroups: R.libGroups, libCards: R.libCards, libCount: R.libCount,
+        allFxCards: R.allFxCards,
         layers, activeLayerId, selectLayer,
         layerVisible, toggleLayerVisible, layerClipCount,
         renamingId: LR.renamingId, renameText: LR.renameText, startRename: LR.startRename, commitRename: LR.commitRename, cancelRename: LR.cancelRename,
@@ -316,7 +392,7 @@ export function mount() {
         darkBg, toggleDarkBg,
         play, stop, togglePlay, setTime,
         canUndo, canRedo, undo: () => H.undo(), redo: () => H.redo(),
-        save: F.save, load: F.load, exportJson: F.exportJson, loadExample,
+        save: F.save, load: F.load, exportJson: F.exportJson, exportScript: F.exportScript,
         autoFit, zoomBy, focusSelection,
         redraw: scheduleDraw,
         actionInfo: SEL.actionInfo,
@@ -331,12 +407,14 @@ export function mount() {
     <span class="material-symbols-outlined">animation</span>
     <h1 class="brand">ANIM-FX 动作编排</h1>
     <span class="topbar-sep"></span>
-    <kit-button size="sm" variant="text" icon="icecream" @click="ctx.loadExample('ice')">冰标枪</kit-button>
-    <kit-button size="sm" variant="text" icon="swords" @click="ctx.loadExample('sword')">三连斩</kit-button>
+    <kit-input class="topbar-name" size="sm" :model-value="ctx.project.name" placeholder="工程名（导出文件名）" @update:model-value="(v) => { ctx.project.name = v; ctx.redraw(); }"></kit-input>
+    <kit-button v-for="p in ctx.presets" :key="p.id" size="sm" variant="text" :icon="p.icon || 'bolt'"
+                :title="p.desc || p.name" @click="ctx.loadPreset(p.id)">{{ p.name }}</kit-button>
     <span class="flex-1"></span>
     <kit-button size="sm" variant="outlined" icon="save" @click="ctx.save">保存</kit-button>
     <kit-button size="sm" variant="outlined" icon="upload_file" @click="ctx.load">载入</kit-button>
     <kit-button size="sm" icon="download" @click="ctx.exportJson">导出 JSON</kit-button>
+    <kit-button size="sm" variant="outlined" icon="code" @click="ctx.exportScript">导出脚本</kit-button>
   </header>
   <div class="main">
     <kit-split class="main-split" ref="mainSplit" v-model="ctx.leftW" :min-left="200" :min-right="560" :snap-edge="false" storage-key="animEditor.v2.leftW">
@@ -360,8 +438,9 @@ export function mount() {
     `,
   });
   app.use(window.UIKit);
-  app.component("PickCards", PickCards);
-  app.component("FxLibrary", FxLibrary);
+  app.component("MasonryGrid", MasonryGrid);
+  app.component("ResourceCard", ResourceCard);
+  app.component("ResourceTab", ResourceTab);
   app.component("PickSeg", PickSeg);
   app.component("PickSwatch", PickSwatch);
   app.component("CanvasStage", CanvasStage);

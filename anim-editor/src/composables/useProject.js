@@ -1,10 +1,23 @@
 // 项目数据 + 选中 + 增删片段/轨道。所有函数回写 reactive project / ref selectedId。
 import * as EN from "../../engine.js";
 import { fxNameCn } from "../lib/fx-names.js";
+import { adoptProject, setClipFrames, syncProjectTime, normalizeFps, secondsOfFrames } from "../lib/frames.js";
 
 const { loadedFx, loadFx } = EN;
 
 export const uid = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+
+/** 片段该占的帧：新数据优先用 f / fEnd，缺失时才按秒换算。 */
+export function clipFramesOf(project, c) {
+  const fps = normalizeFps(project.fps);
+  if (!c) return { f: 0, fEnd: 0 };
+  if (Number.isInteger(c.f) && Number.isInteger(c.fEnd) && c.fEnd > c.f) return { f: c.f, fEnd: c.fEnd };
+  const f = Math.max(0, Math.round((Number(c.t) || 0) * fps));
+  const into = c.until != null
+    ? (Number(c.until) - (Number(c.t) || 0))
+    : (loadedFx(c.fxId)?.meta?.duration ?? 1);
+  return { f, fEnd: Math.max(f + 1, Math.round((f + into * fps))) };
+}
 
 export function clipEndOf(c) {
   if (!c) return 0;
@@ -23,39 +36,94 @@ export function useProject(scheduleDraw, engineGetter = () => null, timeRef = Vu
   const trackOptions = Vue.computed(() => project.tracks.map((tr) => ({ label: tr.name, value: tr.id })));
 
   function addClip(type) {
-    const t0 = Math.min(timeRef.value, Math.max(0, project.duration - 0.2));
+    const fps = normalizeFps(project.fps);
+    const f0 = Math.min(Math.round(timeRef.value * fps), Math.max(0, project.durationFrames - 2));
     const trackOf = (name) => project.tracks.find((x) => x.name === name)?.id ?? project.tracks[0].id;
     let c;
     if (type === "character") {
-      c = { id: uid("c"), trackId: trackOf("角色"), type: "character", t: t0, until: Math.min(project.duration, t0 + 2), actRef: null, actStart: 0, weapon: null, x: 0, y: 0, scale: 1, angle: 0 };
+      c = { id: uid("c"), trackId: trackOf("角色"), type: "character", actRef: null, actStart: 0, weapon: null, x: 0, y: 0, scale: 1, angle: 0 };
+      setClipFrames(project, c, f0, Math.min(project.durationFrames, f0 + 2 * fps));
     } else if (type === "fx") {
-      c = { id: uid("c"), trackId: trackOf("特效"), type: "fx", t: t0, until: Math.min(project.duration, t0 + 0.75), fxId: "melee/sword-slash", from: [16, -22], to: null, scale: 1, angle: 0, seed: 1, palette: "default", label: "新特效" };
+      c = { id: uid("c"), trackId: trackOf("特效"), type: "fx", fxId: "melee/sword-slash", from: [16, -22], to: null, scale: 1, angle: 0, seed: 1, palette: "default", label: "新特效" };
+      setClipFrames(project, c, f0, Math.min(project.durationFrames, f0 + Math.round(0.75 * fps)));
       loadFx("melee/sword-slash").then(scheduleDraw);
     } else if (type === "target") {
-      c = { id: uid("c"), trackId: trackOf("靶子"), type: "target", t: 0, until: project.duration, x: 170, y: 0 };
+      c = { id: uid("c"), trackId: trackOf("靶子"), type: "target", x: 170, y: 0 };
+      setClipFrames(project, c, 0, project.durationFrames);
     } else {
       const firstTarget = project.clips.find((x) => x.type === "target");
-      c = { id: uid("c"), trackId: trackOf("靶子"), type: "state", t: t0, until: Math.min(project.duration, t0 + 2), skin: "ice", hit: true, bindTo: firstTarget?.id ?? null, push: 1.4, straw: 10, shiver: 1, damage: 10, box: [130, -60, 80, 60] };
+      c = { id: uid("c"), trackId: trackOf("靶子"), type: "state", skin: "ice", hit: true, bindTo: firstTarget?.id ?? null, push: 1.4, straw: 10, shiver: 1, damage: 10, box: [130, -60, 80, 60] };
+      setClipFrames(project, c, f0, Math.min(project.durationFrames, f0 + 2 * fps));
     }
     project.clips.push(c);
     selectedId.value = c.id;
   }
 
-  function dropFxOnStage(fxId, worldX, worldY) {
-    const t0 = Math.min(timeRef.value, Math.max(0, project.duration - 0.2));
-    const trackOf = (name) => project.tracks.find((x) => x.name === name)?.id ?? project.tracks[0].id;
-    const c = { id: uid("c"), trackId: trackOf("特效"), type: "fx", t: t0, until: Math.min(project.duration, t0 + 1), fxId, from: [Math.round(worldX), Math.round(worldY)], to: null, scale: 1, angle: 0, seed: 1, palette: "default", label: fxNameCn(fxId) };
-    project.clips.push(c);
-    selectedId.value = c.id;
-    loadFx(fxId).then((m) => {
-      const d = m?.meta?.duration ?? 1;
-      c.until = Math.min(project.duration, c.t + d);
-      engineGetter()?.invalidate?.();
-      scheduleDraw();
-    });
-    scheduleDraw();
+  /** 图层里这一段时间能不能放进某一行；返回第一个空行，全满则 rows 表示需要新行。 */
+  function findRowForRange(trackId, f, fEnd, excludeId) {
+    let rows = 0;
+    for (const c of project.clips) {
+      if (c.trackId === trackId) rows = Math.max(rows, (c.row ?? 0) + 1);
+    }
+    for (let r = 0; r < Math.max(1, rows); r++) {
+      const clash = project.clips.some((c) => c.trackId === trackId && c.id !== excludeId && (c.row ?? 0) === r && f < c.fEnd && fEnd > c.f);
+      if (!clash) return { row: r, fits: true };
+    }
+    return { row: rows, fits: false };
   }
 
+  /**
+   * 资源库拖进画布：落在当前选中的图层里。
+   * 该图层有能放下这段时间的行就放进那一行；所有行都放不下 → 在这一层内部新增一行（不新建图层）。
+   * 没有选中任何图层时用「特效」图层；连特效图层都没有才创建一个。
+   */
+  async function dropFxOnStage(fxId, worldX, worldY, trackId) {
+    const fps = normalizeFps(project.fps);
+    const total = Math.max(1, Math.round(project.durationFrames ?? project.duration * fps));
+    const f0 = Math.min(Math.round(timeRef.value * fps), Math.max(0, total - 1));
+    // 目标图层：选中的那个；没选中就用「特效」；还没有就建一个「特效」
+    function resolveTrack() {
+      const picked = project.tracks.find((t) => t.id === trackId);
+      if (picked) return picked;
+      const fx = project.tracks.find((t) => t.name === "特效");
+      if (fx) return fx;
+      const created = { id: uid("tr"), name: "特效" };
+      project.tracks.push(created);
+      return created;
+    }
+    // 先用已知时长（未加载到就按 1 秒）定出落点，保证拖入立即有反馈
+    const durFirst = loadedFx(fxId)?.meta?.duration ?? 1;
+    const place = (durSec, clip) => {
+      const fEnd = Math.min(total, Math.max(f0 + 1, f0 + Math.ceil(durSec * fps)));
+      const wanted = resolveTrack().id;
+      // 已经放下的片段要先从候选里排除自己，否则会被自己顶开
+      const slot = findRowForRange(wanted, f0, fEnd, clip?.id);
+      if (slot.fits) {
+        if (clip) { clip.trackId = wanted; clip.row = slot.row; }
+        return { trackId: wanted, row: slot.row };
+      }
+      // 这一层所有行都放不下 → 在这一层内部新增一行（row 追加到最后），不新建图层
+      if (clip) { clip.trackId = wanted; clip.row = slot.row; }
+      return { trackId: wanted, row: slot.row, newRow: true };
+    };
+    const spot = place(durFirst, null);
+    const c = { id: uid("c"), trackId: spot.trackId, row: spot.row, type: "fx", fxId, from: [Math.round(worldX), Math.round(worldY)], to: null, scale: 1, angle: 0, seed: 1, palette: "default", label: fxNameCn(fxId) };
+    setClipFrames(project, c, f0, Math.min(total, Math.max(f0 + 1, f0 + Math.ceil(durFirst * fps))));
+    project.clips.push(c);
+    selectedId.value = c.id;
+    engineGetter()?.invalidate?.();
+    scheduleDraw();
+    // 真实时长加载完后再校正一次（新行已经建多了不会再建）
+    loadFx(fxId).then((m) => {
+      const d = m?.meta?.duration ?? durFirst;
+      const end = Math.min(total, Math.max(f0 + 1, f0 + Math.ceil(d * fps)));
+      setClipFrames(project, c, f0, end);
+      if (!findRowForRange(c.trackId, c.f, c.fEnd, c.id).fits) place(d, c);
+      engineGetter()?.invalidate?.();
+      scheduleDraw();
+    }).catch(() => {});
+    return c;
+  }
   function addTrack() {
     project.tracks.push({ id: uid("tr"), name: "轨道 " + (project.tracks.length + 1) });
   }
@@ -76,10 +144,11 @@ export function useProject(scheduleDraw, engineGetter = () => null, timeRef = Vu
   function duplicate() {
     const c = selected.value;
     if (!c) return;
+    const fps = normalizeFps(project.fps);
     const copy = JSON.parse(JSON.stringify(c));
     copy.id = uid("c");
-    copy.t = Math.min(Math.max(0, project.duration - 0.05), c.t + 0.2);
-    if (copy.until != null) copy.until = Math.min(project.duration, copy.until + 0.2);
+    const shift = Math.max(1, Math.round(0.2 * fps));
+    setClipFrames(project, copy, Math.min(project.durationFrames - 1, c.f + shift), Math.min(project.durationFrames, c.fEnd + shift));
     project.clips.push(copy);
     selectedId.value = copy.id;
   }
@@ -105,19 +174,34 @@ export function useProject(scheduleDraw, engineGetter = () => null, timeRef = Vu
     const first = project.clips.find((c) => c.trackId === trackId);
     if (first) selectedId.value = first.id;
   }
-  function replaceAll(data) {
-    project.tracks = JSON.parse(JSON.stringify(data.tracks ?? []));
-    project.clips = JSON.parse(JSON.stringify(data.clips ?? []));
-    project.duration = data.duration ?? 4.34;
-    project.fps = data.fps ?? 24;
+  /** 载入任意版本的工程：统一换算成帧存储。fpsFromFile=false 表示文件没写帧率。 */
+  async function replaceAll(data) {
+    const adopted = adoptProject(data, { durationOf: (fxId) => loadedFx(fxId)?.meta?.duration });
+    const next = adopted.project;
+    project.schema = next.schema;
+    project.name = next.name;
+    project.tracks = next.tracks;
+    project.clips = next.clips;
+    project.fps = next.fps;
+    project.durationFrames = next.durationFrames;
+    project.duration = next.duration;
     normalizeRows();
     selectedId.value = project.clips[0]?.id ?? null;
     engineGetter()?.invalidate();
     engineGetter()?.clearTargets();
     const mods = new Set();
     for (const c of project.clips) { if (c.fxId) mods.add(c.fxId); if (c.actRef) mods.add(c.actRef); }
-    Promise.all([...mods].map((id) => loadFx(id).catch(() => null))).then(() => { engineGetter()?.invalidate(); scheduleDraw(); });
+    await Promise.all([...mods].map((id) => loadFx(id).catch(() => null)));
+    // 特效时长要等模块加载完才准：画面没被裁掉，总长取两者较大值
+    let total = project.durationFrames;
+    for (const c of project.clips) if (c.fEnd > total) total = c.fEnd;
+    project.durationFrames = total;
+    project.duration = secondsOfFrames(total, project.fps);
+    syncProjectTime(project);
+    normalizeRows();
+    engineGetter()?.invalidate();
     scheduleDraw();
+    return adopted;
   }
   return { project, selectedId, selected, sortedClips, clips, trackOptions, addClip, dropFxOnStage, addTrack, removeTrack, removeSelected, duplicate, selectClip, selectTrack, replaceAll, clipEndOf, activeAt, normalizeRows };
 }

@@ -1,5 +1,6 @@
 // 时间轴：刻度/网格 computed、拖拽/吸附/滚动/缩放交互。engine、DOM refs 由组装方注入。
 import { ROW_H } from "../lib/labels.js";
+import { normalizeFps, setClipFrames, round6 } from "../lib/frames.js";
 
 export function useTimeline({ project, time, selected, selectedId, engineGetter, scheduleDraw, setTime, clipEndOf, pxPerSec, tlMode }) {
   const scrollLeft = Vue.ref(0);
@@ -9,15 +10,15 @@ export function useTimeline({ project, time, selected, selectedId, engineGetter,
 
   const totalW = Vue.computed(() => Math.max(360, Math.round((project.duration + 0.2) * pxPerSec.value)));
   const totalH = Vue.computed(() => project.tracks.reduce((sum, tr) => sum + laneHeightView(tr.id), 0));
-  const totalFrames = Vue.computed(() => Math.max(1, Math.round(project.duration * project.fps)));
-  const frameNo = Vue.computed(() => Math.min(totalFrames.value, Math.round(time.value * project.fps) + 1));
+  const totalFrames = Vue.computed(() => Math.max(1, Math.round(project.durationFrames ?? project.duration * project.fps)));
+  const frameNo = Vue.computed(() => Math.min(totalFrames.value, Math.floor(time.value * project.fps + 1e-6) + 1));
 
   const ticks = Vue.computed(() => {
     const pps = pxPerSec.value;
     const out = [];
     if (tlMode.value === "frame") {
       const fpp = Math.max(2, pps / Math.max(1, project.fps));
-      const totalF = Math.max(1, Math.round(project.duration * project.fps));
+      const totalF = Math.max(1, Math.round(project.durationFrames ?? project.duration * project.fps));
       const labelEvery = fpp >= 26 ? 1 : fpp >= 13 ? 2 : fpp >= 7 ? 5 : 10;
       for (let f = 0; f <= totalF; f++) {
         const x = (f / project.fps) * pps;
@@ -60,7 +61,7 @@ export function useTimeline({ project, time, selected, selectedId, engineGetter,
   });
 
   const clipCell = Vue.computed(() => Math.max(2, pxPerSec.value / Math.max(1, project.fps)));
-  const framesOf = (c) => Math.max(1, Math.round((clipEndOf(c) - c.t) * project.fps));
+  const framesOf = (c) => Math.max(1, Math.round(((c.fEnd ?? 0) - (c.f ?? 0)) || (clipEndOf(c) - c.t) * project.fps));
   const tlModeLabel = Vue.computed(() => (tlMode.value === "frame" ? "帧" : "轨道帧"));
   function setTlMode(mode) { tlMode.value = mode; }
 
@@ -181,8 +182,7 @@ export function useTimeline({ project, time, selected, selectedId, engineGetter,
   const snapOn = (ev) => !ev.altKey;
   const snapTime = (t, ev) => {
     if (!snapOn(ev)) return t;
-    const f = Math.round(t * project.fps);
-    return f / project.fps;
+    return Math.round(t * normalizeFps(project.fps)) / normalizeFps(project.fps);
   };
   function onZoomInput(v) {
     const anchor = scrollLeft.value + 160;
@@ -199,7 +199,7 @@ export function useTimeline({ project, time, selected, selectedId, engineGetter,
     const apply = (ev) => {
       const r = content.getBoundingClientRect();
       const x = ev.clientX - r.left;
-      setTime(Math.max(0, Math.min(project.duration, x / pxPerSec.value)));
+      setTime(Math.max(0, Math.min(project.duration, snapTime(x / pxPerSec.value, ev))));
     };
     apply(e);
     const up = () => {
@@ -215,7 +215,7 @@ export function useTimeline({ project, time, selected, selectedId, engineGetter,
     const rect = lane.getBoundingClientRect();
     const apply = (ev) => {
       const x = ev.clientX - rect.left;
-      setTime(Math.max(0, Math.min(project.duration, x / pxPerSec.value)));
+      setTime(Math.max(0, Math.min(project.duration, snapTime(x / pxPerSec.value, ev))));
     };
     apply(e);
     const up = () => {
@@ -240,8 +240,10 @@ export function useTimeline({ project, time, selected, selectedId, engineGetter,
     const rect = bar.getBoundingClientRect();
     const edge = e.clientX < rect.left + 10 ? "left" : e.clientX > rect.right - 10 ? "right" : null;
     const startX = e.clientX;
-    const startT = clip.t;
-    const startEnd = clipEndOf(clip);
+    const fps = normalizeFps(project.fps);
+    const startF = clip.f ?? Math.round(clip.t * fps);
+    const startFEnd = clip.fEnd ?? Math.round(clipEndOf(clip) * fps);
+    const startT = clip.t; // 拖拽起点（秒）；鼠标位移换算成秒后再取整到帧
     const startTrack = clip.trackId;
     const startRow = clip.row ?? 0;
     let previewRow = null;
@@ -254,23 +256,19 @@ export function useTimeline({ project, time, selected, selectedId, engineGetter,
     const laneGeo = snapshotLanes(); // 冻结轨道几何，避免临时行撑高导致判定漂移
     const move = (ev) => {
       moved = true;
-      const dx = (ev.clientX - startX) / pxPerSec.value;
+      const snapFrames = (v) => Math.round(v * fps);
       if (edge === "right") {
-        const end = Math.max(clip.t + 1 / project.fps, startEnd + dx);
-        clip.until = Math.min(project.duration, Math.max(clip.t + 1 / project.fps, snapTime(end, ev)));
+        const endSec = (clip.fEnd ?? startFEnd) / fps + (ev.clientX - startX) / pxPerSec.value;
+        setClipFrames(project, clip, clip.f, Math.max(clip.f + 1, snapFrames(endSec)));
         resizeSink();
       } else if (edge === "left") {
-        const t = Math.max(0, Math.min(startEnd - 1 / project.fps, startT + dx));
-        const snapped = Math.max(0, snapTime(t, ev));
-        clip.t = Math.min(snapped, startEnd - 1 / project.fps);
-        clip.until = startEnd;
+        const f = Math.min(startFEnd - 1, Math.max(0, snapFrames(startT + (ev.clientX - startX) / pxPerSec.value)));
+        setClipFrames(project, clip, f, startFEnd);
         resizeSink();
       } else {
-        const dur = startEnd - startT;
-        let t = Math.max(0, Math.min(project.duration - dur, startT + dx));
-        t = Math.max(0, snapTime(t, ev));
-        clip.t = Math.min(t, Math.max(0, project.duration - dur));
-        clip.until = Math.min(project.duration, clip.t + dur);
+        const durF = startFEnd - startF;
+        const f = Math.max(0, Math.min(totalFrames.value - durF, snapFrames(startT + (ev.clientX - startX) / pxPerSec.value)));
+        setClipFrames(project, clip, f, f + durF);
         // 场景1：跨轨道拖拽。参考框 = 实际落位行（从鼠标所在行向下找空行；全满→临时新行）
         const hit = laneHitAtFrozen(laneGeo, ev.clientY);
         if (!hit) {
@@ -284,17 +282,17 @@ export function useTimeline({ project, time, selected, selectedId, engineGetter,
           previewTrackId = null;
           previewRow = null;
           dragPreviewRow.value = null;
-          clip.row = findDropRow(startTrack, 0, clip.t, dur, clip.id).row;
+          clip.row = findDropRow(startTrack, 0, clip.t, clipEndOf(clip) - clip.t, clip.id).row;
         } else {
           // 场景1：跨图层拖拽。片段留在原处，参考框画在目标图层实际落位行
           // 片段仍留在原图层，但时间变了；若压到本图层其他片段，必须立刻沉行（否则会重叠）
           resizeSink();
-          const drop = findDropRow(hit.trackId, hit.row, clip.t, dur, clip.id);
+          const drop = findDropRow(hit.trackId, hit.row, clip.t, clipEndOf(clip) - clip.t, clip.id);
           previewTrackId = hit.trackId;
           previewRow = drop.row;
           dragPreviewRow.value = { trackId: hit.trackId, row: drop.row, temp: drop.temp };
         }
-        dragClipBox.value = { id: clip.id, trackId: clip.trackId, t: clip.t, dur };
+        dragClipBox.value = { id: clip.id, trackId: clip.trackId, t: clip.t, dur: clipEndOf(clip) - clip.t };
       }
       engineGetter()?.invalidate();
       scheduleDraw();

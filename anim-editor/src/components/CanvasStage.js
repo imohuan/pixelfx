@@ -20,7 +20,7 @@ export const CanvasStage = {
         </button>
       </span>
       <span class="badge-sep"></span>
-      <span class="font-mono">{{ ctx.time.toFixed(2) }}s / {{ ctx.project.duration.toFixed(2) }}s</span>
+      <span class="font-mono">第 {{ ctx.frameNo }} 帧 · {{ ctx.time.toFixed(3) }}s / {{ ctx.project.duration.toFixed(2) }}s</span>
       <span class="font-mono">{{ ctx.viewScale.toFixed(2) }}x</span>
     </div>
     <div class="stage-tools">

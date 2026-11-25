@@ -1,10 +1,9 @@
 // 右侧属性面板的卡片选择器：武器是静态模型，动作 / 特效是实时播放的小预览。
 import { drawWeaponThumb, makeFxPreview } from "./engine.js";
+import { WEAPON_LABELS } from "./src/lib/labels.js";
 
-export const WEAPON_LABELS = {
-  sword: "长剑", greatsword: "巨剑", dagger: "匕首", spear: "长矛", hammer: "战锤",
-  scythe: "镰刀", claw: "利爪", bow: "弓", pistol: "手枪", launcher: "火箭筒", handle: "空手",
-};
+// 武器中文名统一在 src/lib/labels.js 定义，这里转出去给旧调用方用
+export { WEAPON_LABELS };
 
 /* ---------------- 武器静态缩略图（只画一次） ---------------- */
 const weaponCache = new Map();
@@ -24,15 +23,21 @@ const previews = new Set();
 let rafId = 0, clock = 0, lastTs = 0;
 const previewByCanvas = new Map();
 
-// Masonry 防抖重排：瀑布流卡片尺寸异步就绪后统一触发一次
-let masonryRelayoutFn = null, masonryRelayoutTimer = 0;
+// Masonry 防抖重排：卡片缩略图尺寸异步就绪后，通知所有瀑布流重新排版。
+// 用 Set 而不是单个回调：属性/资源/资源标签可能同时挂着多个瀑布流。
+const masonryRelayouts = new Set();
+let masonryRelayoutTimer = 0;
+/** 注册瀑布流重排回调，返回取消函数（MasonryGrid 用） */
 export function setMasonryRelayout(fn) {
-  masonryRelayoutFn = fn;
+  masonryRelayouts.add(fn);
+  return () => masonryRelayouts.delete(fn);
 }
 function scheduleMasonryRelayout() {
-  if (!masonryRelayoutFn) return;
+  if (!masonryRelayouts.size) return;
   clearTimeout(masonryRelayoutTimer);
-  masonryRelayoutTimer = setTimeout(() => masonryRelayoutFn?.(), 250);
+  masonryRelayoutTimer = setTimeout(() => {
+    for (const fn of masonryRelayouts) { try { fn(); } catch (e) { /* 单个面板出错不影响其他面板 */ } }
+  }, 250);
 }
 
 function tick(ts) {
@@ -83,7 +88,7 @@ const io = typeof IntersectionObserver !== "undefined"
     }, { rootMargin: "80px" })
   : null;
 
-async function attachPreview(canvas, id, ratio, kind) {
+export async function attachCardPreview(canvas, id, ratio, kind) {
   // "auto"：按特效自身 meta.size 取景（引擎里钳制 0.5~2.2），竖长的特效不再被 16:9 裁切
   const aspect = ratio === "9 / 16" ? 9 / 16 : ratio === "1 / 1" ? 1 : ratio === "auto" ? "auto" : 16 / 9;
   // 动作宫格里的卡：只演人物本体（不带武器/技能特效）
@@ -92,6 +97,8 @@ async function attachPreview(canvas, id, ratio, kind) {
   if (!handle) return null;
   // 让画布在卡片里按整数倍放大到最大（1 舞台像素 = N 屏幕像素），人物才够大
   const fit = () => {
+    // 卡片可能已经被列表换掉（切分类），这时直接跳过
+    if (!canvas.isConnected || !canvas.parentElement) return;
     const box = canvas.parentElement.getBoundingClientRect();
     if (box.width < 10 || canvas.width < 10) return;
     if (canvas.dataset.masonry === "1") {
@@ -120,55 +127,31 @@ async function attachPreview(canvas, id, ratio, kind) {
   return entry;
 }
 
-/* ---------------- 卡片宫格 ---------------- */
-export const PickCards = {
-  name: "PickCards",
-  props: {
-    modelValue: { type: [String, Number], default: "" },
-    options: { type: Array, default: () => [] },
-    kind: { type: String, default: "fx" },   // weapon | move | fx
-    cardW: { type: String, default: "150px" }, // 每张卡的目标宽度（grid 里会被 clamp）
-    cardRatio: { type: String, default: "16 / 9" },
-    cardMinh: { type: String, default: "120px" }, // 卡片最小高度（预览区域自适应）
-  },
-  emits: ["update:modelValue"],
-  mounted() { this.attachAll(); },
-  updated() { this.attachAll(); },
-  methods: {
-    attachAll() {
-      const nodes = this.$refs.cvs;
-      if (!nodes) return;
-      const list = Array.isArray(nodes) ? nodes : [nodes];
-      for (const c of list) {
-        const value = c.dataset.value;
-        if (!value || c.dataset.bound === value) continue;
-        c.dataset.bound = value;
-        if (this.kind === "weapon") {
-          const thumb = weaponThumb(value);
-          c.width = thumb.width;
-          c.height = thumb.height;
-          // 直接把内容复制到卡片画布（尺寸=内容尺寸），CSS object-fit 放大到卡片
-          c.getContext("2d").drawImage(thumb, 0, 0);
-          // 武器画布尺寸就是内容尺寸，CSS 拉满缩略图区域即可（object-fit contain 保比例）
-          continue;
-        }
-        attachPreview(c, value, this.cardRatio, this.kind);
-      }
-    },
-  },
-  template: `
-    <div class="pk-grid" :style="{ '--pk-card-w': cardW, '--pk-card-ar': cardRatio, '--pk-card-minh': cardMinh }">
-      <button v-for="o in options" :key="o.value" type="button"
-        class="pk-card" :class="{ 'is-on': o.value === modelValue }"
-        :title="o.label" @click="$emit('update:modelValue', o.value)">
-        <span class="pk-thumb">
-          <span v-if="o.icon" class="material-symbols-outlined pk-ico">{{ o.icon }}</span>
-          <canvas v-else ref="cvs" :data-value="o.value"></canvas>
-        </span>
-        <span class="pk-label">{{ o.short || o.label }}</span>
-      </button>
-    </div>`,
-};
+/** 卡片离开 DOM 时主动停掉预览（避免等下一帧轮询才发现） */
+export function detachCardPreview(canvas) {
+  const entry = previewByCanvas.get(canvas);
+  if (!entry) return;
+  previews.delete(entry);
+  previewByCanvas.delete(canvas);
+  io?.unobserve(canvas);
+}
+
+/** 容器宽度变了以后，让这张卡重新按整数倍铺满（瀑布流卡片用） */
+export function refitCardPreview(canvas) {
+  previewByCanvas.get(canvas)?.fit?.();
+}
+
+/** 武器静态缩略图画到卡片画布上；scale 2 = 两倍像素（武器本身不大，放大才看得清） */
+export function attachWeaponThumb(canvas, value, scale = 2) {
+  const thumb = weaponThumb(value);
+  const s = Math.max(1, Math.round(scale));
+  canvas.width = thumb.width * s;
+  canvas.height = thumb.height * s;
+  const g = canvas.getContext("2d");
+  g.clearRect(0, 0, canvas.width, canvas.height);
+  g.imageSmoothingEnabled = false;
+  g.drawImage(thumb, 0, 0, canvas.width, canvas.height);
+}
 
 /* ---------------- 分段切换（选项 <= 4 个） ---------------- */
 export const PickSeg = {
@@ -209,106 +192,4 @@ export const PickSwatch = {
     </div>`,
 };
 
-/* ---------------- 资源标签宫格：全特效浏览 + 拖拽到画布 ---------------- */
-export const FxLibrary = {
-  name: "FxLibrary",
-  props: {
-    cards: { type: Array, default: () => [] },
-    cardW: { type: String, default: "104px" },
-  },
-  mounted() {
-    this.attachAll();
-    // 专业瀑布流：Masonry（vendor 本地化，离线可用）
-    // 面板初始 v-show 隐藏时 Masonry 拿不到尺寸：轮询等首次拿到宽度再布局（比 IO 更可靠）
-    const tryInit = (n) => {
-      if (this.masonry) return;
-      if (this.$el.clientWidth > 50) { this.setupMasonry(); return; }
-      if (n > 0) setTimeout(() => tryInit(n - 1), 300);
-    };
-    tryInit(40);   // 最多重试 12s
-    setMasonryRelayout(() => {
-      this.masonry?.reloadItems?.();
-      this.masonry?.layout?.();
-    });
-    // 面板从隐藏 tab 切回来 / 宽度变化时，重新布局 + 按整数倍放大缩略图
-    this.ro = new ResizeObserver(() => this.fitAll());
-    this.ro.observe(this.$el);
-  },
-  updated() {
-    this.attachAll();
-    this.$nextTick(() => { this.masonry?.reloadItems?.(); this.masonry?.layout?.(); this.fitAll(); });
-  },
-  beforeUnmount() { this.ro?.disconnect(); this.masonry?.destroy?.(); },
-  methods: {
-    setupMasonry() {
-      if (this.masonry) { this.applyCardWidth(); this.masonry.option?.({ columnWidth: this.cardPx }); this.masonry.reloadItems?.(); this.masonry.layout?.(); return; }
-      if (!window.Masonry) return;
-      if (!this.$el.clientWidth) return;   // 容器还没布局出来，等 fitAll 再试
-      this.applyCardWidth();
-      try {
-        this.masonry = new Masonry(this.$el, {
-          itemSelector: ".fxlib-card",
-          columnWidth: this.cardPx,  // Masonry 内部会自己加 gutter：实际列宽 = cardPx + gutter
-          gutter: 6,
-          percentPosition: true,
-          transitionDuration: "0.15s",
-          resizeContainer: false,   // 容器高度由 flex 布局占满面板，Masonry 不要显式设置 height
-        });
-      } catch (e) { console.warn("masonry init", e); }
-    },
-    // 列数按容器宽度算：目标卡宽 ~150px，剩余空间均摊到卡片，让每行铺满容器不留右侧空隙
-    applyCardWidth() {
-      const w = this.$el.clientWidth - 2;   // 减掉容器 1px padding
-      const GUTTER = 6, TARGET = 150, MIN = 120, MAX = 200;
-      let cols = Math.max(1, Math.round(w / TARGET));
-      let cardW = (w - GUTTER * (cols - 1)) / cols;
-      while (cardW < MIN && cols > 1) { cols--; cardW = (w - GUTTER * (cols - 1)) / cols; }
-      while (cardW > MAX && cols < 12) { cols++; cardW = (w - GUTTER * (cols - 1)) / cols; }
-      this.cardPx = cardW;   // 注意：不能用 this.cardW（那是只读 prop），列宽数据存这里
-      this.$el.style.setProperty("--fxlib-card-w", cardW + "px");
-    },
-    attachAll() {
-      const nodes = this.$refs.cvs;
-      if (!nodes) return;
-      const list = Array.isArray(nodes) ? nodes : [nodes];
-      for (const c of list) {
-        if (!c.dataset.value || c.dataset.bound === c.dataset.value) continue;
-        c.dataset.bound = c.dataset.value;
-        c.dataset.masonry = "1";
-        attachPreview(c, c.dataset.value, "auto", "fx");
-      }
-    },
-    fitAll() {
-      try {
-        this.applyCardWidth();
-        if (this.masonry) this.masonry.option?.({ columnWidth: this.cardPx });
-        else this.setupMasonry();
-        this.masonry?.reloadItems?.();
-        const nodes = this.$refs.cvs;
-        if (!nodes) return;
-        const list = Array.isArray(nodes) ? nodes : [nodes];
-        for (const c of list) previewByCanvas.get(c)?.fit?.();
-        this.masonry?.layout?.();
-      } catch (e) {
-        console.warn("fxlib fit", e);
-      }
-    },
-    onDragStart(e, o) {
-      e.dataTransfer.effectAllowed = "copy";
-      e.dataTransfer.setData("text/fx-id", o.value);
-      e.dataTransfer.setData("text/plain", o.value);
-    },
-  },
-  template: `
-    <div class="pk-grid fxlib-grid" :style="{ '--pk-card-w': cardW }">
-      <button v-for="o in cards" :key="o.value" type="button"
-        class="pk-card fxlib-card" draggable="true" :title="o.label"
-        @dragstart="onDragStart($event, o)">
-        <span class="pk-thumb">
-          <canvas ref="cvs" :data-value="o.value"></canvas>
-        </span>
-        <span class="pk-label">{{ o.short }}</span>
-      </button>
-    </div>`,
-};
 
